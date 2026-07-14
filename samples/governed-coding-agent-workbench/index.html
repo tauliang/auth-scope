@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Governed Coding Agent Workbench</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="mission-panel">
+        <div class="brand">
+          <div class="brand-mark">AS</div>
+          <div>
+            <strong>Auth Scope</strong>
+            <span>Coding agent sample</span>
+          </div>
+        </div>
+
+        <section class="panel-section">
+          <span class="eyebrow">Agent profile</span>
+          <div class="segmented" role="group" aria-label="Agent profile">
+            <button class="segment-active" type="button" data-agent="codex">Codex</button>
+            <button type="button" data-agent="opencode">OpenCode</button>
+          </div>
+          <dl class="compact-list">
+            <div><dt>Agent ID</dt><dd id="agent-id">codex-agent</dd></div>
+            <div><dt>Instance</dt><dd id="agent-instance">inst_codex_42</dd></div>
+            <div><dt>Key thumbprint</dt><dd class="mono" id="agent-thumbprint">sha256:codex-demo</dd></div>
+          </dl>
+        </section>
+
+        <section class="panel-section">
+          <span class="eyebrow">Mission</span>
+          <h1>Fix dashboard filter bug</h1>
+          <p class="muted">The agent may edit frontend mission screens, run tests, and open a pull request. It must ask before package changes or deployment.</p>
+          <dl class="compact-list">
+            <div><dt>Mission ref</dt><dd class="mono" id="mission-ref">mref_coding_demo</dd></div>
+            <div><dt>Version</dt><dd id="mission-version">v1</dd></div>
+            <div><dt>State</dt><dd><span class="status status-green">active</span></dd></div>
+          </dl>
+        </section>
+
+        <section class="panel-section">
+          <span class="eyebrow">Authority region</span>
+          <div class="grant-list" id="grant-list"></div>
+          <div class="forbidden">
+            <strong>Forbidden</strong>
+            <span>write secrets</span>
+            <span>push main</span>
+            <span>deploy production</span>
+          </div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <span class="eyebrow">Governed Coding Agent Workbench</span>
+            <h2>Mission-aware tool calls for coding agents</h2>
+          </div>
+          <div class="topbar-actions">
+            <button class="button button-secondary" type="button" id="reset-run">Reset</button>
+            <button class="button button-secondary" type="button" id="contain-agent">Contain agent</button>
+            <button class="button button-secondary" type="button" id="simulate-integration">Simulate integration</button>
+            <button class="button button-primary" type="button" id="run-next">Run next action</button>
+          </div>
+        </header>
+
+        <section class="agent-console">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Proposed run</span>
+              <h3>Agent action queue</h3>
+            </div>
+            <span class="status" id="run-status">ready</span>
+          </div>
+          <div class="action-list" id="action-list"></div>
+        </section>
+
+        <section class="integration-console">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Mission-critical integrations</span>
+              <h3>Enterprise control plane</h3>
+            </div>
+            <span class="status" id="integration-run-status">0 simulated</span>
+          </div>
+          <div class="integration-layout">
+            <div class="integration-list" id="integration-list"></div>
+            <article class="integration-detail">
+              <div class="integration-detail-heading">
+                <div class="integration-logo" id="integration-category">SC</div>
+                <div>
+                  <span class="eyebrow">Selected service</span>
+                  <h3 id="integration-title">GitHub</h3>
+                  <p id="integration-summary" class="muted"></p>
+                </div>
+              </div>
+              <dl class="integration-meta">
+                <div><dt>Contract</dt><dd class="mono" id="integration-contract"></dd></div>
+                <div><dt>Binding</dt><dd id="integration-binding"></dd></div>
+                <div><dt>Surface</dt><dd id="integration-surface"></dd></div>
+              </dl>
+              <div class="fact-list" id="integration-facts"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="decision-grid">
+          <article class="card">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">PDP request</span>
+                <h3>Runtime evaluation</h3>
+              </div>
+            </div>
+            <pre id="request-json"></pre>
+          </article>
+          <article class="card">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">PDP response</span>
+                <h3>Authority decision</h3>
+              </div>
+              <span class="decision-pill" id="decision-pill">not evaluated</span>
+            </div>
+            <pre id="response-json"></pre>
+          </article>
+        </section>
+      </main>
+
+      <aside class="inspector">
+        <section class="card approval-card">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Human authority</span>
+              <h3>Approval queue</h3>
+            </div>
+            <span class="count" id="approval-count">0</span>
+          </div>
+          <div id="approval-panel" class="empty-panel">No pending approvals.</div>
+        </section>
+
+        <section class="card">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Integration preview</span>
+              <h3 id="integration-preview-title">GitHub check</h3>
+            </div>
+            <span class="status" id="check-status">neutral</span>
+          </div>
+          <div class="github-check" id="github-check"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Emergency authority</span>
+              <h3>Containment</h3>
+            </div>
+            <span class="status status-green" id="containment-status">inactive</span>
+          </div>
+          <div class="blast-grid">
+            <div><strong id="blast-missions">0</strong><span>Missions</span></div>
+            <div><strong id="blast-leases">0</strong><span>Leases</span></div>
+            <div><strong id="blast-projections">0</strong><span>Projections</span></div>
+          </div>
+        </section>
+
+        <section class="card audit-card">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Evidence ledger</span>
+              <h3>Audit events</h3>
+            </div>
+          </div>
+          <div class="audit-list" id="audit-list"></div>
+        </section>
+      </aside>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -31,6 +31,13 @@ AUTH_SCOPE_ADDR=:9090 go run ./cmd/auth-scope
 go test ./...
 ```
 
+Coverage:
+
+```sh
+go test ./... -coverprofile=coverage.out
+go tool cover -func=coverage.out
+```
+
 ## API
 
 ```text

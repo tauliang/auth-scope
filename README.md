@@ -15,6 +15,20 @@ The first slice is intentionally small and runnable:
 
 ## Run
 
+Start the service with Docker Compose:
+
+```sh
+docker-compose up
+```
+
+The service will be available at `http://localhost:8080`. Override the host port with `AUTH_SCOPE_PORT`.
+
+```sh
+AUTH_SCOPE_PORT=9090 docker-compose up
+```
+
+Run it locally without Docker:
+
 ```sh
 go run ./cmd/auth-scope
 ```

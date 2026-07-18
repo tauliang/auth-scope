@@ -4,22 +4,12 @@ import (
 	"errors"
 	"slices"
 	"sync"
-	"time"
 )
 
 var (
 	ErrNotFound = errors.New("not found")
 	ErrConflict = errors.New("conflict")
 )
-
-// OutboxEvent represents an event in the outbox table.
-type OutboxEvent struct {
-	ID         string         `json:"id"`
-	Type       string         `json:"type"`
-	MissionRef string         `json:"mission_ref,omitempty"`
-	Payload    map[string]any `json:"payload"`
-	CreatedAt  time.Time      `json:"created_at"`
-}
 
 type Store interface {
 	SaveProposal(MissionProposal) error
@@ -31,7 +21,6 @@ type Store interface {
 	ChildrenOf(string) ([]Mission, error)
 	AppendEvent(Event) error
 	Events() []Event
-	PublishOutboxEvents() ([]OutboxEvent, error)
 }
 
 type MemoryStore struct {
@@ -142,9 +131,4 @@ func (s *MemoryStore) Events() []Event {
 	events := make([]Event, len(s.events))
 	copy(events, s.events)
 	return events
-}
-
-// PublishOutboxEvents returns empty for MemoryStore (no outbox in memory mode).
-func (s *MemoryStore) PublishOutboxEvents() ([]OutboxEvent, error) {
-	return nil, nil
 }

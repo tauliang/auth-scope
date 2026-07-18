@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: authscope
+      POSTGRES_USER: authscope
+      POSTGRES_PASSWORD: authscope
+    ports:
+      - "${AUTH_SCOPE_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authscope -d authscope"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
   auth-scope:
     build:
       context: .
@@ -6,8 +23,12 @@ services:
     image: auth-scope:mvp
     environment:
       AUTH_SCOPE_ADDR: ":8080"
+      DATABASE_URL: "postgres://authscope:authscope@postgres:5432/authscope?sslmode=disable"
     ports:
       - "${AUTH_SCOPE_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 10s
@@ -15,3 +36,6 @@ services:
       retries: 3
       start_period: 5s
     restart: unless-stopped
+
+volumes:
+  postgres-data:

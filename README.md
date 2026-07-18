@@ -4,8 +4,8 @@
 
 The first slice is intentionally small and runnable:
 
-- Go HTTP service with no third-party dependencies
-- In-memory Mission ledger and event log
+- Go HTTP service with in-memory and PostgreSQL-backed stores
+- Embedded PostgreSQL migrations and transactional outbox publishing
 - Mission proposal and approval flow
 - Synchronous action evaluation
 - Resume checks for agent harnesses
@@ -21,10 +21,10 @@ Start the service with Docker Compose:
 docker-compose up
 ```
 
-The service will be available at `http://localhost:8080`. Override the host port with `AUTH_SCOPE_PORT`.
+The service will be available at `http://localhost:8080`. Docker Compose also starts PostgreSQL, and the service applies embedded migrations automatically when `DATABASE_URL` is set. Override the host ports with `AUTH_SCOPE_PORT` and `AUTH_SCOPE_POSTGRES_PORT`.
 
 ```sh
-AUTH_SCOPE_PORT=9090 docker-compose up
+AUTH_SCOPE_PORT=9090 AUTH_SCOPE_POSTGRES_PORT=15432 docker-compose up
 ```
 
 Run it locally without Docker:
@@ -33,7 +33,7 @@ Run it locally without Docker:
 go run ./cmd/auth-scope
 ```
 
-The server listens on `:8080` by default. Override it with `AUTH_SCOPE_ADDR`.
+The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`.
 
 ```sh
 AUTH_SCOPE_ADDR=:9090 go run ./cmd/auth-scope
@@ -112,4 +112,4 @@ curl -s http://localhost:8080/v1/missions/{mission_ref}/evaluate \
 
 ## MVP Boundary
 
-This branch starts with an in-memory store so the core authority semantics are easy to inspect and test. The next production step is replacing the store with Postgres tables, a transactional outbox, and signed projections for OAuth/MCP integrations.
+This branch now includes the first PostgreSQL persistence slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event JSON round-trips, delegation traversal indexes, and a transactional outbox. The remaining production work is hardening deployment operations, adding signed projections for OAuth/MCP integrations, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.

@@ -6,6 +6,7 @@ The first slice is intentionally small and runnable:
 
 - Go HTTP service with in-memory and PostgreSQL-backed stores
 - React operator console for authority review, intervention, and audit workflows
+- Same-origin Docker Compose console/API deployment with an nginx `/api` proxy
 - Embedded PostgreSQL migrations and transactional outbox publishing
 - Agent identity registry with Ed25519 request signatures and nonce replay protection
 - AuthZEN-style runtime authorization endpoints for PEP/PDP integration
@@ -28,6 +29,8 @@ The first slice is intentionally small and runnable:
 
 ## Run
 
+### Docker Compose quickstart
+
 Start PostgreSQL, the API, and the operator console with Docker Compose:
 
 ```sh
@@ -42,7 +45,9 @@ Override any host port when needed:
 AUTH_SCOPE_FRONTEND_PORT=3100 AUTH_SCOPE_PORT=9090 AUTH_SCOPE_POSTGRES_PORT=15432 docker compose up --build
 ```
 
-Run it locally without Docker:
+### Local API process
+
+Run the API locally without Docker:
 
 ```sh
 go run ./cmd/auth-scope
@@ -60,9 +65,33 @@ The request body cannot select its approver or containment administrator. The se
 
 The Compose credentials are intentionally local-only. A production deployment should place the console and API behind the organization authentication boundary and supply administrator credentials from its identity integration; do not ship the static development tokens.
 
+### Local frontend process
+
+Run the console against a separately started local API:
+
 ```sh
-AUTH_SCOPE_ADDR=:9090 go run ./cmd/auth-scope
+cd frontend
+pnpm install --frozen-lockfile
+pnpm dev
 ```
+
+Open `http://localhost:5173`. Vite proxies `/api` to `http://127.0.0.1:8080` by default; set `AUTH_SCOPE_API_URL` when the API is elsewhere. The local non-Compose administrator token is `auth-scope-dev-admin-token` unless overridden through the API environment variables above.
+
+## Operator Console
+
+The React console is an operational surface for people responsible for AI-agent authority, not a marketing site. It starts at the work queue and keeps the high-frequency paths close:
+
+- Overview summarizes active missions, pending approvals, containment, agents, projections, and recent events.
+- Missions lets operators search, filter, inspect effective authority, view lineage/events/raw evidence, and complete or revoke active authority.
+- Approvals supports mission proposal review and expansion decisions, including version-drift warnings before committing changes.
+- Agents shows workload identities, key bindings, lineage, and revocation.
+- Containment creates incident controls, shows active rules, inspects blast radius, and lifts rules with recorded reasons.
+- Governance manages approval rules and tool authorization contracts.
+- Projections lists external credentials and supports revocation.
+- Audit searches immutable events and opens full evidence payloads.
+- Workbench verifies signed decision artifacts and projection tokens without retaining credential material.
+
+The console keeps administrator bearer credentials in React memory only. Refreshing the browser clears the credential and returns the operator to the connection screen. Empty states, retry actions, not-found routes, and detail-load failures should always provide a path back to the relevant inventory or queue.
 
 ## Test
 
@@ -89,6 +118,17 @@ pnpm build
 pnpm e2e
 ```
 
+If dependencies are already installed but `pnpm` is not on your shell path, the same package scripts can be run through npm:
+
+```sh
+cd frontend
+npm run typecheck
+npm run lint
+npm run test
+npm run build
+npm run e2e
+```
+
 The frontend enforces 80% minimum coverage for statements, branches, functions, and lines. See [`frontend/README.md`](frontend/README.md) for local development and API proxy details.
 
 ## API
@@ -97,23 +137,19 @@ The frontend enforces 80% minimum coverage for statements, branches, functions, 
 GET  /healthz
 GET  /.well-known/mission-authority
 GET  /.well-known/authzen-configuration
-GET  /v1/admin/session
-GET  /v1/operations/summary
-GET  /v1/missions
-GET  /v1/mission-proposals
-GET  /v1/mission-proposals/{proposal_id}
-GET  /v1/expansion-requests
-GET  /v1/agents
-GET  /v1/tool-contracts
-GET  /v1/projections
-GET  /v1/containment-rules/{rule_id}
 POST /access/v1/evaluation
 POST /access/v1/evaluations
 POST /v1/agents
+GET  /v1/admin/session
+GET  /v1/operations/summary
+GET  /v1/agents
 GET  /v1/agents/{agent_id}
 POST /v1/agents/{agent_id}/revoke
 POST /v1/mission-proposals
+GET  /v1/mission-proposals
+GET  /v1/mission-proposals/{proposal_id}
 POST /v1/mission-proposals/{proposal_id}/approve
+GET  /v1/missions
 POST /v1/missions/{mission_ref}/evaluate
 POST /v1/missions/{mission_ref}/authority/negotiations
 POST /v1/missions/{mission_ref}/expansion-requests
@@ -124,6 +160,7 @@ POST /v1/missions/{mission_ref}/complete
 GET  /v1/missions/{mission_ref}/introspect
 GET  /v1/missions/{mission_ref}/lineage
 GET  /v1/agents/{agent_id}/lineage
+GET  /v1/expansion-requests
 GET  /v1/expansion-requests/{expansion_id}
 POST /v1/expansion-requests/{expansion_id}/approve
 POST /v1/expansion-requests/{expansion_id}/deny
@@ -143,11 +180,14 @@ GET  /v1/approval-rules
 POST /v1/expansion-requests/{expansion_id}/approvals
 POST /v1/containment-rules
 GET  /v1/containment-rules
+GET  /v1/containment-rules/{rule_id}
 POST /v1/containment-rules/{rule_id}/lift
 GET  /v1/containment-rules/{rule_id}/blast-radius
 GET  /v1/events
 GET  /v1/events/stream
 ```
+
+The OpenAPI file at [`openapi/auth-scope-v1.yaml`](openapi/auth-scope-v1.yaml) is the frontend contract subset used to generate TypeScript declarations. The route inventory above reflects the full MVP HTTP surface.
 
 ## Example
 
@@ -236,6 +276,8 @@ curl -s http://localhost:8080/v1/expansion-requests/{expansion_id}/approve \
   -H 'content-type: application/json' \
   -d '{"approval_evidence": {"method": "demo"}}'
 ```
+
+Use `/approve` for a single direct approval. Use `/approvals` when approval rules require multiple independent administrators; each request records the authenticated bearer principal as one approver.
 
 Negotiate a requested authority change before creating an expansion. Fully safe requests return `accepted`; partially safe requests return `counteroffered` with `proposed_authority` and `denied_authority`; risky out-of-scope requests can return `requires_human_approval`:
 

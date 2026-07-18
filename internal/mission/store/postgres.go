@@ -3,22 +3,28 @@ package store
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/lib/pq"
 	"github.com/tauliang/auth-scope/internal/mission"
 )
 
+//go:embed migrations/*.up.sql
+var migrationFS embed.FS
+
 // PostgresStore implements the Store interface using PostgreSQL.
 type PostgresStore struct {
-	db      *sql.DB
-	clock   mission.Clock
-	logger  *slog.Logger
+	db     *sql.DB
+	clock  mission.Clock
+	logger *slog.Logger
 }
 
 // NewPostgresStore creates a new PostgresStore instance.
@@ -30,12 +36,10 @@ func NewPostgresStore(db *sql.DB, clock mission.Clock) (*PostgresStore, error) {
 		clock = mission.SystemClock{}
 	}
 
-	logger := slog.Default().With("component", "postgres-store")
-
 	return &PostgresStore{
-		db:      db,
-		clock:   clock,
-		logger:  logger,
+		db:     db,
+		clock:  clock,
+		logger: slog.Default().With("component", "postgres-store"),
 	}, nil
 }
 
@@ -52,11 +56,85 @@ func NewPostgresStoreFromEnv() (*PostgresStore, error) {
 	}
 
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := ApplyMigrations(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("apply migrations: %w", err)
+	}
+
 	return NewPostgresStore(db, mission.SystemClock{})
+}
+
+// ApplyMigrations applies embedded up migrations that have not yet run.
+func ApplyMigrations(ctx context.Context, db *sql.DB) error {
+	if db == nil {
+		return errors.New("db cannot be nil")
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version TEXT PRIMARY KEY,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`); err != nil {
+		return fmt.Errorf("ensure schema_migrations: %w", err)
+	}
+
+	names, err := MigrationNames()
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		applied, err := migrationApplied(ctx, db, name)
+		if err != nil {
+			return err
+		}
+		if applied {
+			continue
+		}
+		sqlBytes, err := migrationFS.ReadFile(name)
+		if err != nil {
+			return fmt.Errorf("read migration %s: %w", name, err)
+		}
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin migration %s: %w", name, err)
+		}
+		if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("execute migration %s: %w", name, err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version) VALUES ($1)`, name); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record migration %s: %w", name, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// MigrationNames returns embedded up migrations in apply order.
+func MigrationNames() ([]string, error) {
+	names, err := fs.Glob(migrationFS, "migrations/*.up.sql")
+	if err != nil {
+		return nil, fmt.Errorf("glob migrations: %w", err)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+func migrationApplied(ctx context.Context, db *sql.DB, name string) (bool, error) {
+	var exists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)`, name).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check migration %s: %w", name, err)
+	}
+	return exists, nil
 }
 
 // Close closes the database connection.
@@ -72,37 +150,36 @@ func (s *PostgresStore) SaveProposal(proposal mission.MissionProposal) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	regionsJSON, err := json.Marshal(proposal.AuthorityRegion)
+	proposalJSON, err := json.Marshal(proposal)
 	if err != nil {
-		return fmt.Errorf("marshal authority_region: %w", err)
+		return fmt.Errorf("marshal proposal: %w", err)
+	}
+	createdAt := proposal.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
 	}
 
 	query := `
 		INSERT INTO mission_proposals (
-			id, principal_id, agent_id, purpose, regions,
-			status, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+			id, tenant_id, principal_id, agent_id, status, purpose, proposal_json, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "SaveProposal", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("SaveProposal", startTime)
 
 	_, err = s.db.ExecContext(ctx, query,
 		proposal.ProposalID,
+		proposal.TenantID,
 		proposal.Principal.Subject,
-		proposal.Agent.ClientID,
-		proposal.Intent.Objective,
-		regionsJSON,
+		proposal.Agent.InstanceID,
 		string(proposal.Status),
-		proposal.CreatedAt,
+		proposal.Intent.Objective,
+		proposalJSON,
+		createdAt,
 	)
 	if err != nil {
-		var pgErr *pq.Error
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if isUniqueViolation(err) {
 			return mission.ErrConflict
 		}
 		return fmt.Errorf("insert proposal: %w", err)
@@ -116,47 +193,22 @@ func (s *PostgresStore) GetProposal(id string) (mission.MissionProposal, error) 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	query := `
-		SELECT id, principal_id, agent_id, purpose, regions,
-		       status, created_at, approved_at, rejected_at
-		FROM mission_proposals WHERE id = $1
-	`
-
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "GetProposal", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("GetProposal", startTime)
 
-	var proposal mission.MissionProposal
-	var principalID, agentID, purpose string
-	var regionsJSON []byte
-	var statusStr string
-
-	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&proposal.ProposalID,
-		&principalID,
-		&agentID,
-		&purpose,
-		&regionsJSON,
-		&statusStr,
-		&proposal.CreatedAt,
-	)
+	var proposalJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT proposal_json FROM mission_proposals WHERE id = $1`, id).Scan(&proposalJSON)
 	if errors.Is(err, sql.ErrNoRows) {
+		return mission.MissionProposal{}, mission.ErrNotFound
+	}
+	if err != nil {
 		return mission.MissionProposal{}, fmt.Errorf("query proposal: %w", err)
 	}
 
-	var regions []mission.ResourceGrant
-	if err := json.Unmarshal(regionsJSON, &regions); err != nil {
-		return mission.MissionProposal{}, fmt.Errorf("unmarshal authority_region: %w", err)
+	var proposal mission.MissionProposal
+	if err := json.Unmarshal(proposalJSON, &proposal); err != nil {
+		return mission.MissionProposal{}, fmt.Errorf("unmarshal proposal: %w", err)
 	}
-
-	proposal.Principal = mission.Principal{Subject: principalID}
-	proposal.Agent = mission.Agent{ClientID: agentID}
-	proposal.Intent.Objective = purpose
-	proposal.AuthorityRegion.Resources = regions
-
 	return proposal, nil
 }
 
@@ -165,29 +217,15 @@ func (s *PostgresStore) DeleteProposal(id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	query := `DELETE FROM mission_proposals WHERE id = $1`
-
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "DeleteProposal", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("DeleteProposal", startTime)
 
-	result, err := s.db.ExecContext(ctx, query, id)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM mission_proposals WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete proposal: %w", err)
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("check rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return mission.ErrNotFound
-	}
-
-	return nil
+	return rowsAffectedErr(result)
 }
 
 // SaveMission saves a mission to the database.
@@ -195,40 +233,43 @@ func (s *PostgresStore) SaveMission(m mission.Mission) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	regionsJSON, err := json.Marshal(m.AuthorityRegion)
+	missionJSON, err := json.Marshal(m)
 	if err != nil {
-		return fmt.Errorf("marshal authority_region: %w", err)
+		return fmt.Errorf("marshal mission: %w", err)
 	}
+	createdAt := m.Lifecycle.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+	now := s.clock.Now()
 
 	query := `
 		INSERT INTO missions (
-			ref, proposal_id, state, principal_id, agent_id,
-			purpose, regions, current_decision, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			ref, mission_id, tenant_id, state, version, principal_id, agent_id,
+			parent_mission_ref, purpose, mission_json, created_at, updated_at, expires_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`
 
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "SaveMission", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("SaveMission", startTime)
 
 	_, err = s.db.ExecContext(ctx, query,
 		m.MissionRef,
-		nil, // proposal_id will be set later if needed
+		m.MissionID,
+		m.TenantID,
 		string(m.State),
+		m.Version,
 		m.Principal.Subject,
-		m.Agent.ClientID,
+		m.Agent.InstanceID,
+		nullableString(m.Delegation.ParentMissionRef),
 		m.Purpose.Objective,
-		regionsJSON,
-		nil, // current_decision
-		m.Lifecycle.CreatedAt,
-		s.clock.Now(),
+		missionJSON,
+		createdAt,
+		now,
+		nullableTime(m.Lifecycle.ExpiresAt),
 	)
 	if err != nil {
-		var pgErr *pq.Error
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if isUniqueViolation(err) {
 			return mission.ErrConflict
 		}
 		return fmt.Errorf("insert mission: %w", err)
@@ -242,36 +283,11 @@ func (s *PostgresStore) GetMission(ref string) (mission.Mission, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	query := `
-		SELECT ref, proposal_id, state, principal_id, agent_id,
-		       purpose, regions, current_decision, created_at, updated_at
-		FROM missions WHERE ref = $1
-	`
-
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "GetMission", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("GetMission", startTime)
 
-	var m mission.Mission
-	var principalID, agentID, purpose string
-	var regionsJSON []byte
-	var stateStr string
-
-	err := s.db.QueryRowContext(ctx, query, ref).Scan(
-		&m.MissionRef,
-		nil, // proposal_id (ignored for now)
-		&stateStr,
-		&principalID,
-		&agentID,
-		&purpose,
-		&regionsJSON,
-		nil, // current_decision (ignored for now)
-		&m.Lifecycle.CreatedAt,
-		&m.Lifecycle.ExpiresAt, // Will be overwritten below
-	)
+	var missionJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT mission_json FROM missions WHERE ref = $1`, ref).Scan(&missionJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return mission.Mission{}, mission.ErrNotFound
 	}
@@ -279,17 +295,10 @@ func (s *PostgresStore) GetMission(ref string) (mission.Mission, error) {
 		return mission.Mission{}, fmt.Errorf("query mission: %w", err)
 	}
 
-	var regions []mission.ResourceGrant
-	if err := json.Unmarshal(regionsJSON, &regions); err != nil {
-		return mission.Mission{}, fmt.Errorf("unmarshal authority_region: %w", err)
+	var m mission.Mission
+	if err := json.Unmarshal(missionJSON, &m); err != nil {
+		return mission.Mission{}, fmt.Errorf("unmarshal mission: %w", err)
 	}
-
-	m.State = mission.State(stateStr)
-	m.Principal = mission.Principal{Subject: principalID}
-	m.Agent = mission.Agent{ClientID: agentID}
-	m.Purpose.Objective = purpose
-	m.AuthorityRegion.Resources = regions
-
 	return m, nil
 }
 
@@ -298,53 +307,45 @@ func (s *PostgresStore) UpdateMission(m mission.Mission) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	regionsJSON, err := json.Marshal(m.AuthorityRegion)
+	missionJSON, err := json.Marshal(m)
 	if err != nil {
-		return fmt.Errorf("marshal authority_region: %w", err)
+		return fmt.Errorf("marshal mission: %w", err)
 	}
 
 	query := `
 		UPDATE missions SET
 			state = $1,
-			principal_id = $2,
-			agent_id = $3,
-			purpose = $4,
-			regions = $5,
-			current_decision = $6,
-			updated_at = $7
-		WHERE ref = $8
+			version = $2,
+			principal_id = $3,
+			agent_id = $4,
+			parent_mission_ref = $5,
+			purpose = $6,
+			mission_json = $7,
+			updated_at = $8,
+			expires_at = $9
+		WHERE ref = $10
 	`
 
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "UpdateMission", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("UpdateMission", startTime)
 
 	result, err := s.db.ExecContext(ctx, query,
 		string(m.State),
+		m.Version,
 		m.Principal.Subject,
-		m.Agent.ClientID,
+		m.Agent.InstanceID,
+		nullableString(m.Delegation.ParentMissionRef),
 		m.Purpose.Objective,
-		regionsJSON,
-		nil, // current_decision
+		missionJSON,
 		s.clock.Now(),
+		nullableTime(m.Lifecycle.ExpiresAt),
 		m.MissionRef,
 	)
 	if err != nil {
 		return fmt.Errorf("update mission: %w", err)
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("check rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return mission.ErrNotFound
-	}
-
-	return nil
+	return rowsAffectedErr(result)
 }
 
 // ChildrenOf retrieves all child missions for a given parent reference.
@@ -353,102 +354,83 @@ func (s *PostgresStore) ChildrenOf(parentRef string) ([]mission.Mission, error) 
 	defer cancel()
 
 	query := `
-		SELECT ref, state, principal_id, agent_id,
-		       purpose, regions, created_at
-		FROM missions WHERE delegation->>'parent_mission_ref' = $1
-		ORDER BY created_at ASC
+		SELECT mission_json
+		FROM missions
+		WHERE parent_mission_ref = $1
+		ORDER BY created_at ASC, ref ASC
 	`
 
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "ChildrenOf", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("ChildrenOf", startTime)
 
 	rows, err := s.db.QueryContext(ctx, query, parentRef)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, mission.ErrNotFound
-	}
 	if err != nil {
 		return nil, fmt.Errorf("query children: %w", err)
 	}
 	defer rows.Close()
 
-	var children []mission.Mission
+	children := make([]mission.Mission, 0)
 	for rows.Next() {
-		var m mission.Mission
-		var principalID, agentID, purpose string
-		var regionsJSON []byte
-		var stateStr string
-
-		err := rows.Scan(
-			&m.MissionRef,
-			&stateStr,
-			&principalID,
-			&agentID,
-			&purpose,
-			&regionsJSON,
-			&m.Lifecycle.CreatedAt,
-		)
-		if err != nil {
+		var missionJSON []byte
+		if err := rows.Scan(&missionJSON); err != nil {
 			return nil, fmt.Errorf("scan child: %w", err)
 		}
-
-		var regions []mission.ResourceGrant
-		if err := json.Unmarshal(regionsJSON, &regions); err != nil {
-			return nil, fmt.Errorf("unmarshal authority_region: %w", err)
+		var child mission.Mission
+		if err := json.Unmarshal(missionJSON, &child); err != nil {
+			return nil, fmt.Errorf("unmarshal child mission: %w", err)
 		}
-
-		m.State = mission.State(stateStr)
-		m.Principal = mission.Principal{Subject: principalID}
-		m.Agent = mission.Agent{ClientID: agentID}
-		m.Purpose.Objective = purpose
-		m.AuthorityRegion.Resources = regions
-
-		children = append(children, m)
+		children = append(children, child)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate children: %w", err)
 	}
-
 	return children, nil
 }
 
-// AppendEvent appends an event to the events table.
+// AppendEvent appends an event and stages it in the outbox in one transaction.
 func (s *PostgresStore) AppendEvent(event mission.Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal event: %w", err)
+	}
 	payloadJSON, err := json.Marshal(event.Payload)
 	if err != nil {
 		return fmt.Errorf("marshal payload: %w", err)
 	}
 
-	query := `
-		INSERT INTO events (id, type, mission_ref, payload, created_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`
-
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "AppendEvent", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("AppendEvent", startTime)
 
-	_, err = s.db.ExecContext(ctx, query,
-		event.EventID,
-		event.Type,
-		event.MissionRef,
-		payloadJSON,
-		event.OccurredAt,
-	)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin append event: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO events (id, type, mission_ref, tenant_id, event_json, payload, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, event.EventID, event.Type, nullableString(event.MissionRef), nullableString(event.TenantID), eventJSON, payloadJSON, event.OccurredAt)
+	if err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("insert event: %w", err)
 	}
 
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO outbox_events (id, type, mission_ref, event_json, payload, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, event.EventID, event.Type, nullableString(event.MissionRef), eventJSON, payloadJSON, event.OccurredAt)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("insert outbox event: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit append event: %w", err)
+	}
 	return nil
 }
 
@@ -457,119 +439,128 @@ func (s *PostgresStore) Events() []mission.Event {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	query := `
-		SELECT id, type, mission_ref, payload, created_at
-		FROM events ORDER BY created_at ASC
-	`
-
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "Events", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("Events", startTime)
 
-	rows, err := s.db.QueryContext(ctx, query)
-	if errors.Is(err, sql.ErrNoRows) {
-		return []mission.Event{}
-	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT event_json
+		FROM events
+		ORDER BY created_at ASC, id ASC
+	`)
 	if err != nil {
 		s.logger.Error("failed to query events", "error", err)
 		return []mission.Event{}
 	}
 	defer rows.Close()
 
-	var events []mission.Event
+	events := make([]mission.Event, 0)
 	for rows.Next() {
-		var e mission.Event
-		var payloadJSON []byte
-
-		err := rows.Scan(
-			&e.EventID,
-			&e.Type,
-			&e.MissionRef,
-			&payloadJSON,
-			&e.OccurredAt,
-		)
-		if err != nil {
+		var eventJSON []byte
+		if err := rows.Scan(&eventJSON); err != nil {
 			s.logger.Error("failed to scan event", "error", err)
 			continue
 		}
-
-		if err := json.Unmarshal(payloadJSON, &e.Payload); err != nil {
-			s.logger.Error("failed to unmarshal payload", "error", err)
+		var event mission.Event
+		if err := json.Unmarshal(eventJSON, &event); err != nil {
+			s.logger.Error("failed to unmarshal event", "error", err)
 			continue
 		}
-
-		events = append(events, e)
+		events = append(events, event)
 	}
-
+	if err := rows.Err(); err != nil {
+		s.logger.Error("error iterating events", "error", err)
+	}
 	return events
 }
 
-
-
-// PublishOutboxEvents processes unprocessed outbox events.
+// PublishOutboxEvents marks unprocessed outbox events processed and returns them.
 func (s *PostgresStore) PublishOutboxEvents() ([]mission.OutboxEvent, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	query := `
-		INSERT INTO outbox_events_processed (event_id, processed_at)
-		SELECT id, NOW()
-		FROM outbox_events
-		WHERE processed_at IS NULL
-		ORDER BY created_at ASC
-		LIMIT 100
-		RETURNING id, type, mission_ref, payload, created_at
+		WITH pending AS (
+			SELECT id
+			FROM outbox_events
+			WHERE processed_at IS NULL
+			ORDER BY created_at ASC, id ASC
+			LIMIT 100
+			FOR UPDATE SKIP LOCKED
+		),
+		updated AS (
+			UPDATE outbox_events o
+			SET processed_at = NOW()
+			FROM pending p
+			WHERE o.id = p.id
+			RETURNING o.id, o.type, o.mission_ref, o.payload, o.created_at
+		),
+		recorded AS (
+			INSERT INTO outbox_events_processed (event_id, processed_at)
+			SELECT id, NOW()
+			FROM updated
+			ON CONFLICT (event_id) DO NOTHING
+			RETURNING event_id
+		)
+		SELECT id, type, mission_ref, payload, created_at
+		FROM updated
+		ORDER BY created_at ASC, id ASC
 	`
 
 	startTime := time.Now()
-	defer func() {
-		if elapsed := time.Since(startTime); elapsed > 100*time.Millisecond {
-			s.logger.Warn("slow query", "query", "PublishOutboxEvents", "duration_ms", elapsed.Milliseconds())
-		}
-	}()
+	defer s.logSlowQuery("PublishOutboxEvents", startTime)
 
 	rows, err := s.db.QueryContext(ctx, query)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
 	if err != nil {
-		s.logger.Error("failed to query outbox events", "error", err)
 		return nil, fmt.Errorf("query outbox: %w", err)
 	}
 	defer rows.Close()
 
-	var events []mission.OutboxEvent
+	events := make([]mission.OutboxEvent, 0)
 	for rows.Next() {
-		var e mission.OutboxEvent
+		var event mission.OutboxEvent
+		var missionRef sql.NullString
 		var payloadJSON []byte
-
-		err := rows.Scan(
-			&e.ID,
-			&e.Type,
-			&e.MissionRef,
-			&payloadJSON,
-			&e.CreatedAt,
-		)
-		if err != nil {
-			s.logger.Error("failed to scan outbox event", "error", err)
-			continue
+		if err := rows.Scan(&event.ID, &event.Type, &missionRef, &payloadJSON, &event.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan outbox event: %w", err)
 		}
-
-		if err := json.Unmarshal(payloadJSON, &e.Payload); err != nil {
-			s.logger.Error("failed to unmarshal outbox payload", "error", err)
-			continue
+		event.MissionRef = missionRef.String
+		if err := json.Unmarshal(payloadJSON, &event.Payload); err != nil {
+			return nil, fmt.Errorf("unmarshal outbox payload: %w", err)
 		}
-
-		events = append(events, e)
+		events = append(events, event)
 	}
-
 	if err := rows.Err(); err != nil {
-		s.logger.Error("error iterating outbox events", "error", err)
 		return nil, fmt.Errorf("iterate outbox: %w", err)
 	}
-
 	return events, nil
+}
+
+func (s *PostgresStore) logSlowQuery(name string, start time.Time) {
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		s.logger.Warn("slow query", "query", name, "duration_ms", elapsed.Milliseconds())
+	}
+}
+
+func rowsAffectedErr(result sql.Result) error {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return mission.ErrNotFound
+	}
+	return nil
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pq.Error
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+func nullableString(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: value != ""}
+}
+
+func nullableTime(value time.Time) sql.NullTime {
+	return sql.NullTime{Time: value, Valid: !value.IsZero()}
 }

@@ -490,9 +490,9 @@ func newID(prefix string) string {
 
 // OutboxPublisher handles publishing events from the outbox table.
 type OutboxPublisher struct {
-	store   Store
+	store    Store
 	interval time.Duration
-	logger  *slog.Logger
+	logger   *slog.Logger
 }
 
 // NewOutboxPublisher creates a new outbox publisher.

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -22,6 +23,11 @@ func (c unitClock) Now() time.Time {
 }
 
 func TestNewPostgresStoreValidationAndClose(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	if _, err := NewPostgresStoreFromEnv(); err == nil {
+		t.Fatal("expected DATABASE_URL validation error")
+	}
+
 	if _, err := NewPostgresStore(nil, nil); err == nil {
 		t.Fatal("expected nil db validation error")
 	}
@@ -96,6 +102,91 @@ func TestApplyMigrationsSkipsAppliedMigrations(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestPostgresStoreAgentIdentityMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	identity := sampleAgentIdentity()
+	mock.ExpectExec("INSERT INTO agent_identities").
+		WithArgs(
+			identity.AgentID,
+			identity.TenantID,
+			identity.Agent.Provider,
+			identity.Agent.ClientID,
+			identity.Agent.InstanceID,
+			identity.KeyThumbprint,
+			identity.PublicKey,
+			identity.Status,
+			sqlmock.AnyArg(),
+			identity.CreatedAt,
+			nullableTime(identity.RevokedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveAgentIdentity(identity); err != nil {
+		t.Fatalf("SaveAgentIdentity: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO agent_identities").
+		WithArgs(
+			identity.AgentID,
+			identity.TenantID,
+			identity.Agent.Provider,
+			identity.Agent.ClientID,
+			identity.Agent.InstanceID,
+			identity.KeyThumbprint,
+			identity.PublicKey,
+			identity.Status,
+			sqlmock.AnyArg(),
+			identity.CreatedAt,
+			nullableTime(identity.RevokedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveAgentIdentity(identity); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveAgentIdentity duplicate err = %v, want ErrConflict", err)
+	}
+
+	identityJSON := mustJSON(t, identity)
+	mock.ExpectQuery("SELECT identity_json FROM agent_identities").
+		WithArgs(identity.AgentID).
+		WillReturnRows(sqlmock.NewRows([]string{"identity_json"}).AddRow(identityJSON))
+	got, err := store.GetAgentIdentity(identity.AgentID)
+	if err != nil {
+		t.Fatalf("GetAgentIdentity: %v", err)
+	}
+	if got.KeyThumbprint != identity.KeyThumbprint {
+		t.Fatalf("identity did not round-trip: %#v", got)
+	}
+
+	mock.ExpectQuery("SELECT identity_json FROM agent_identities").
+		WithArgs("missing").
+		WillReturnError(sql.ErrNoRows)
+	if _, err := store.GetAgentIdentity("missing"); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("GetAgentIdentity missing err = %v, want ErrNotFound", err)
+	}
+
+	identity.Status = mission.AgentStatusRevoked
+	identity.RevokedAt = testUnitNow()
+	mock.ExpectExec("UPDATE agent_identities SET").
+		WithArgs(identity.Status, sqlmock.AnyArg(), nullableTime(identity.RevokedAt), identity.AgentID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateAgentIdentity(identity); err != nil {
+		t.Fatalf("UpdateAgentIdentity: %v", err)
+	}
+
+	nonce := mission.AgentNonce{AgentID: identity.AgentID, Nonce: "nonce-1", RequestHash: "hash", SeenAt: testUnitNow()}
+	mock.ExpectExec("INSERT INTO agent_nonces").
+		WithArgs(nonce.AgentID, nonce.Nonce, nonce.RequestHash, nonce.SeenAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveAgentNonce(nonce); err != nil {
+		t.Fatalf("SaveAgentNonce: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO agent_nonces").
+		WithArgs(nonce.AgentID, nonce.Nonce, nonce.RequestHash, nonce.SeenAt).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveAgentNonce(nonce); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveAgentNonce duplicate err = %v, want ErrConflict", err)
 	}
 }
 
@@ -285,7 +376,573 @@ func TestPostgresStoreChildrenEventsAndOutbox(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreEventErrorBranches(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	event := sampleEvent()
+	mock.ExpectBegin().WillReturnError(errors.New("begin failed"))
+	if err := store.AppendEvent(event); err == nil {
+		t.Fatal("expected append event begin error")
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO events").
+		WithArgs(event.EventID, event.Type, nullableString(event.MissionRef), nullableString(event.TenantID), sqlmock.AnyArg(), sqlmock.AnyArg(), event.OccurredAt).
+		WillReturnError(errors.New("insert failed"))
+	mock.ExpectRollback()
+	if err := store.AppendEvent(event); err == nil {
+		t.Fatal("expected append event insert error")
+	}
+
+	mock.ExpectQuery("SELECT event_json").WillReturnError(errors.New("query failed"))
+	if events := store.Events(); len(events) != 0 {
+		t.Fatalf("Events query error = %#v, want empty", events)
+	}
+
+	mock.ExpectQuery("SELECT event_json").
+		WillReturnRows(sqlmock.NewRows([]string{"event_json"}).AddRow([]byte("{")))
+	if events := store.Events(); len(events) != 0 {
+		t.Fatalf("Events malformed JSON = %#v, want empty", events)
+	}
+}
+
+func TestPostgresStoreGovernanceMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	expansion := sampleExpansionRequest()
+	mock.ExpectExec("INSERT INTO expansion_requests").
+		WithArgs(
+			expansion.ExpansionID,
+			expansion.MissionRef,
+			expansion.TenantID,
+			expansion.Status,
+			sqlmock.AnyArg(),
+			expansion.CreatedAt,
+			nullableTime(expansion.DecidedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveExpansionRequest(expansion); err != nil {
+		t.Fatalf("SaveExpansionRequest: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO expansion_requests").
+		WithArgs(
+			expansion.ExpansionID,
+			expansion.MissionRef,
+			expansion.TenantID,
+			expansion.Status,
+			sqlmock.AnyArg(),
+			expansion.CreatedAt,
+			nullableTime(expansion.DecidedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveExpansionRequest(expansion); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveExpansionRequest duplicate err = %v, want ErrConflict", err)
+	}
+
+	expansionJSON := mustJSON(t, expansion)
+	mock.ExpectQuery("SELECT expansion_json FROM expansion_requests").
+		WithArgs(expansion.ExpansionID).
+		WillReturnRows(sqlmock.NewRows([]string{"expansion_json"}).AddRow(expansionJSON))
+	gotExpansion, err := store.GetExpansionRequest(expansion.ExpansionID)
+	if err != nil {
+		t.Fatalf("GetExpansionRequest: %v", err)
+	}
+	if gotExpansion.Status != expansion.Status || gotExpansion.Action.Operation != expansion.Action.Operation {
+		t.Fatalf("expansion did not round-trip: %#v", gotExpansion)
+	}
+
+	mock.ExpectQuery("SELECT expansion_json FROM expansion_requests").
+		WithArgs("missing").
+		WillReturnError(sql.ErrNoRows)
+	if _, err := store.GetExpansionRequest("missing"); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("GetExpansionRequest missing err = %v, want ErrNotFound", err)
+	}
+
+	expansion.Status = mission.ExpansionStatusApproved
+	expansion.DecidedAt = testUnitNow()
+	mock.ExpectExec("UPDATE expansion_requests SET").
+		WithArgs(expansion.Status, sqlmock.AnyArg(), nullableTime(expansion.DecidedAt), expansion.ExpansionID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateExpansionRequest(expansion); err != nil {
+		t.Fatalf("UpdateExpansionRequest: %v", err)
+	}
+	mock.ExpectExec("UPDATE expansion_requests SET").
+		WithArgs(expansion.Status, sqlmock.AnyArg(), nullableTime(expansion.DecidedAt), expansion.ExpansionID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := store.UpdateExpansionRequest(expansion); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("UpdateExpansionRequest missing err = %v, want ErrNotFound", err)
+	}
+
+	evidence := sampleEvaluationEvidence()
+	mock.ExpectExec("INSERT INTO evaluation_evidence").
+		WithArgs(
+			evidence.EvidenceID,
+			evidence.MissionRef,
+			nullableString(evidence.TenantID),
+			evidence.Artifact,
+			sqlmock.AnyArg(),
+			evidence.CreatedAt,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveEvaluationEvidence(evidence); err != nil {
+		t.Fatalf("SaveEvaluationEvidence: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO evaluation_evidence").
+		WithArgs(
+			evidence.EvidenceID,
+			evidence.MissionRef,
+			nullableString(evidence.TenantID),
+			evidence.Artifact,
+			sqlmock.AnyArg(),
+			evidence.CreatedAt,
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveEvaluationEvidence(evidence); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveEvaluationEvidence duplicate err = %v, want ErrConflict", err)
+	}
+
+	evidenceJSON := mustJSON(t, evidence)
+	mock.ExpectQuery("SELECT evidence_json FROM evaluation_evidence").
+		WithArgs(evidence.EvidenceID).
+		WillReturnRows(sqlmock.NewRows([]string{"evidence_json"}).AddRow(evidenceJSON))
+	gotEvidence, err := store.GetEvaluationEvidence(evidence.EvidenceID)
+	if err != nil {
+		t.Fatalf("GetEvaluationEvidence: %v", err)
+	}
+	if gotEvidence.PolicyVersion != mission.DefaultPolicyVersionID || gotEvidence.Artifact != evidence.Artifact {
+		t.Fatalf("evidence did not round-trip: %#v", gotEvidence)
+	}
+	mock.ExpectQuery("SELECT evidence_json FROM evaluation_evidence").
+		WithArgs("missing").
+		WillReturnError(sql.ErrNoRows)
+	if _, err := store.GetEvaluationEvidence("missing"); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("GetEvaluationEvidence missing err = %v, want ErrNotFound", err)
+	}
+
+	contract := sampleToolContract()
+	mock.ExpectExec("INSERT INTO tool_contracts").
+		WithArgs(contract.ToolName, sqlmock.AnyArg(), contract.CreatedAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveToolContract(contract); err != nil {
+		t.Fatalf("SaveToolContract: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO tool_contracts").
+		WithArgs(contract.ToolName, sqlmock.AnyArg(), contract.CreatedAt).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveToolContract(contract); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveToolContract duplicate err = %v, want ErrConflict", err)
+	}
+
+	contractJSON := mustJSON(t, contract)
+	mock.ExpectQuery("SELECT contract_json FROM tool_contracts").
+		WithArgs(contract.ToolName).
+		WillReturnRows(sqlmock.NewRows([]string{"contract_json"}).AddRow(contractJSON))
+	gotContract, err := store.GetToolContract(contract.ToolName)
+	if err != nil {
+		t.Fatalf("GetToolContract: %v", err)
+	}
+	if gotContract.ResourceIDParam != contract.ResourceIDParam {
+		t.Fatalf("tool contract did not round-trip: %#v", gotContract)
+	}
+	mock.ExpectQuery("SELECT contract_json FROM tool_contracts").
+		WithArgs("missing").
+		WillReturnError(sql.ErrNoRows)
+	if _, err := store.GetToolContract("missing"); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("GetToolContract missing err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestPostgresStoreCommitExpansionDecisionTransaction(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	m := sampleMission()
+	expectedVersion := m.Version
+	m.Version++
+	expansion := sampleExpansionRequest()
+	expansion.Status = mission.ExpansionStatusApproved
+	expansion.DecidedAt = testUnitNow()
+	event := sampleEvent()
+	commit := mission.ExpansionDecisionCommit{
+		Mission:                 &m,
+		ExpectedMissionVersion:  expectedVersion,
+		Expansion:               expansion,
+		ExpectedExpansionStatus: mission.ExpansionStatusPending,
+		Event:                   event,
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE missions SET").
+		WithArgs(
+			string(m.State), m.Version, m.Principal.Subject, m.Agent.InstanceID,
+			nullableString(m.Delegation.ParentMissionRef), m.Purpose.Objective, sqlmock.AnyArg(),
+			testUnitNow(), nullableTime(m.Lifecycle.ExpiresAt), m.MissionRef, expectedVersion,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE expansion_requests SET").
+		WithArgs(expansion.Status, sqlmock.AnyArg(), nullableTime(expansion.DecidedAt), expansion.ExpansionID, mission.ExpansionStatusPending).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO events").
+		WithArgs(event.EventID, event.Type, nullableString(event.MissionRef), nullableString(event.TenantID), sqlmock.AnyArg(), sqlmock.AnyArg(), event.OccurredAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO outbox_events").
+		WithArgs(event.EventID, event.Type, nullableString(event.MissionRef), sqlmock.AnyArg(), sqlmock.AnyArg(), event.OccurredAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := store.CommitExpansionDecision(context.Background(), commit); err != nil {
+		t.Fatalf("CommitExpansionDecision: %v", err)
+	}
+}
+
+func TestPostgresStoreCommitExpansionDecisionRollsBackOnConflictAndEventFailure(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	m := sampleMission()
+	expectedVersion := m.Version
+	m.Version++
+	expansion := sampleExpansionRequest()
+	expansion.Status = mission.ExpansionStatusApproved
+	event := sampleEvent()
+	commit := mission.ExpansionDecisionCommit{
+		Mission:                 &m,
+		ExpectedMissionVersion:  expectedVersion,
+		Expansion:               expansion,
+		ExpectedExpansionStatus: mission.ExpansionStatusPending,
+		Event:                   event,
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE missions SET").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+	if err := store.CommitExpansionDecision(context.Background(), commit); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("conflicting commit err = %v, want ErrConflict", err)
+	}
+
+	commit.Mission = nil
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE expansion_requests SET").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO events").WillReturnError(errors.New("event unavailable"))
+	mock.ExpectRollback()
+	if err := store.CommitExpansionDecision(context.Background(), commit); err == nil {
+		t.Fatal("expected event failure to roll back expansion decision")
+	}
+}
+
+func TestPostgresStoreAdvancedGovernanceMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	projection := sampleProjection()
+	mock.ExpectExec("INSERT INTO projections").
+		WithArgs(
+			projection.ProjectionID,
+			projection.MissionRef,
+			nullableString(projection.TenantID),
+			projection.Status,
+			sqlmock.AnyArg(),
+			projection.IssuedAt,
+			projection.ExpiresAt,
+			nullableTime(projection.RevokedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveProjection(projection); err != nil {
+		t.Fatalf("SaveProjection: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO projections").
+		WithArgs(
+			projection.ProjectionID,
+			projection.MissionRef,
+			nullableString(projection.TenantID),
+			projection.Status,
+			sqlmock.AnyArg(),
+			projection.IssuedAt,
+			projection.ExpiresAt,
+			nullableTime(projection.RevokedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveProjection(projection); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveProjection duplicate err = %v, want ErrConflict", err)
+	}
+	projectionJSON := mustJSON(t, projection)
+	mock.ExpectQuery("SELECT projection_json FROM projections").
+		WithArgs(projection.ProjectionID).
+		WillReturnRows(sqlmock.NewRows([]string{"projection_json"}).AddRow(projectionJSON))
+	gotProjection, err := store.GetProjection(projection.ProjectionID)
+	if err != nil {
+		t.Fatalf("GetProjection: %v", err)
+	}
+	if gotProjection.Type != projection.Type {
+		t.Fatalf("projection did not round-trip: %#v", gotProjection)
+	}
+	mock.ExpectQuery("SELECT projection_json FROM projections").
+		WithArgs("missing").
+		WillReturnError(sql.ErrNoRows)
+	if _, err := store.GetProjection("missing"); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("GetProjection missing err = %v, want ErrNotFound", err)
+	}
+	projection.Status = mission.ProjectionStatusRevoked
+	projection.RevokedAt = testUnitNow()
+	mock.ExpectExec("UPDATE projections SET").
+		WithArgs(projection.Status, sqlmock.AnyArg(), projection.ExpiresAt, nullableTime(projection.RevokedAt), projection.ProjectionID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateProjection(projection); err != nil {
+		t.Fatalf("UpdateProjection: %v", err)
+	}
+
+	lease := sampleMissionLease()
+	mock.ExpectExec("INSERT INTO mission_leases").
+		WithArgs(lease.LeaseID, lease.MissionRef, nullableString(lease.TenantID), lease.MissionVersion, sqlmock.AnyArg(), lease.CreatedAt, lease.ExpiresAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveMissionLease(lease); err != nil {
+		t.Fatalf("SaveMissionLease: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO mission_leases").
+		WithArgs(lease.LeaseID, lease.MissionRef, nullableString(lease.TenantID), lease.MissionVersion, sqlmock.AnyArg(), lease.CreatedAt, lease.ExpiresAt).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveMissionLease(lease); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveMissionLease duplicate err = %v, want ErrConflict", err)
+	}
+	leaseJSON := mustJSON(t, lease)
+	mock.ExpectQuery("SELECT lease_json FROM mission_leases").
+		WithArgs(lease.LeaseID).
+		WillReturnRows(sqlmock.NewRows([]string{"lease_json"}).AddRow(leaseJSON))
+	gotLease, err := store.GetMissionLease(lease.LeaseID)
+	if err != nil {
+		t.Fatalf("GetMissionLease: %v", err)
+	}
+	if gotLease.Actor.AgentInstanceID != lease.Actor.AgentInstanceID {
+		t.Fatalf("lease did not round-trip: %#v", gotLease)
+	}
+	lease.RefreshedAt = testUnitNow()
+	mock.ExpectExec("UPDATE mission_leases SET").
+		WithArgs(lease.MissionVersion, sqlmock.AnyArg(), lease.ExpiresAt, lease.LeaseID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateMissionLease(lease); err != nil {
+		t.Fatalf("UpdateMissionLease: %v", err)
+	}
+
+	rule := sampleApprovalRule()
+	mock.ExpectExec("INSERT INTO approval_rules").
+		WithArgs(rule.RuleID, nullableString(rule.TenantID), rule.AppliesTo, sqlmock.AnyArg(), rule.CreatedAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveApprovalRule(rule); err != nil {
+		t.Fatalf("SaveApprovalRule: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO approval_rules").
+		WithArgs(rule.RuleID, nullableString(rule.TenantID), rule.AppliesTo, sqlmock.AnyArg(), rule.CreatedAt).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveApprovalRule(rule); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveApprovalRule duplicate err = %v, want ErrConflict", err)
+	}
+	ruleJSON := mustJSON(t, rule)
+	mock.ExpectQuery("SELECT rule_json").
+		WillReturnRows(sqlmock.NewRows([]string{"rule_json"}).AddRow(ruleJSON))
+	rules, err := store.ListApprovalRules()
+	if err != nil {
+		t.Fatalf("ListApprovalRules: %v", err)
+	}
+	if len(rules) != 1 || rules[0].RuleID != rule.RuleID {
+		t.Fatalf("ListApprovalRules = %#v", rules)
+	}
+
+	record := sampleApprovalRecord()
+	mock.ExpectExec("INSERT INTO approval_records").
+		WithArgs(record.ApprovalID, record.TargetType, record.TargetID, nullableString(record.TenantID), record.Approver.Subject, record.Approver.Issuer, sqlmock.AnyArg(), record.CreatedAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveApprovalRecord(record); err != nil {
+		t.Fatalf("SaveApprovalRecord: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO approval_records").
+		WithArgs(record.ApprovalID, record.TargetType, record.TargetID, nullableString(record.TenantID), record.Approver.Subject, record.Approver.Issuer, sqlmock.AnyArg(), record.CreatedAt).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveApprovalRecord(record); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveApprovalRecord duplicate err = %v, want ErrConflict", err)
+	}
+	recordJSON := mustJSON(t, record)
+	mock.ExpectQuery("SELECT record_json").
+		WithArgs(record.TargetType, record.TargetID).
+		WillReturnRows(sqlmock.NewRows([]string{"record_json"}).AddRow(recordJSON))
+	records, err := store.ListApprovalRecords(record.TargetType, record.TargetID)
+	if err != nil {
+		t.Fatalf("ListApprovalRecords: %v", err)
+	}
+	if len(records) != 1 || records[0].ApprovalID != record.ApprovalID {
+		t.Fatalf("ListApprovalRecords = %#v", records)
+	}
+}
+
+func TestPostgresStoreGrandGovernanceMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	negotiation := sampleAuthorityNegotiation()
+	mock.ExpectExec("INSERT INTO authority_negotiations").
+		WithArgs(negotiation.NegotiationID, negotiation.MissionRef, nullableString(negotiation.TenantID), negotiation.Status, sqlmock.AnyArg(), negotiation.CreatedAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveAuthorityNegotiation(negotiation); err != nil {
+		t.Fatalf("SaveAuthorityNegotiation: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO authority_negotiations").
+		WithArgs(negotiation.NegotiationID, negotiation.MissionRef, nullableString(negotiation.TenantID), negotiation.Status, sqlmock.AnyArg(), negotiation.CreatedAt).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveAuthorityNegotiation(negotiation); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveAuthorityNegotiation duplicate err = %v, want ErrConflict", err)
+	}
+	negotiationJSON := mustJSON(t, negotiation)
+	mock.ExpectQuery("SELECT negotiation_json FROM authority_negotiations").
+		WithArgs(negotiation.NegotiationID).
+		WillReturnRows(sqlmock.NewRows([]string{"negotiation_json"}).AddRow(negotiationJSON))
+	gotNegotiation, err := store.GetAuthorityNegotiation(negotiation.NegotiationID)
+	if err != nil {
+		t.Fatalf("GetAuthorityNegotiation: %v", err)
+	}
+	if gotNegotiation.Status != negotiation.Status {
+		t.Fatalf("negotiation did not round-trip: %#v", gotNegotiation)
+	}
+	mock.ExpectQuery("SELECT negotiation_json FROM authority_negotiations").
+		WithArgs("missing").
+		WillReturnError(sql.ErrNoRows)
+	if _, err := store.GetAuthorityNegotiation("missing"); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("GetAuthorityNegotiation missing err = %v, want ErrNotFound", err)
+	}
+
+	rule := sampleContainmentRule()
+	mock.ExpectExec("INSERT INTO containment_rules").
+		WithArgs(rule.RuleID, nullableString(rule.TenantID), rule.TargetType, rule.TargetID, rule.Status, sqlmock.AnyArg(), rule.CreatedAt, nullableTime(rule.ExpiresAt), nullableTime(rule.LiftedAt)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveContainmentRule(rule); err != nil {
+		t.Fatalf("SaveContainmentRule: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO containment_rules").
+		WithArgs(rule.RuleID, nullableString(rule.TenantID), rule.TargetType, rule.TargetID, rule.Status, sqlmock.AnyArg(), rule.CreatedAt, nullableTime(rule.ExpiresAt), nullableTime(rule.LiftedAt)).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveContainmentRule(rule); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveContainmentRule duplicate err = %v, want ErrConflict", err)
+	}
+	ruleJSON := mustJSON(t, rule)
+	mock.ExpectQuery("SELECT rule_json FROM containment_rules").
+		WithArgs(rule.RuleID).
+		WillReturnRows(sqlmock.NewRows([]string{"rule_json"}).AddRow(ruleJSON))
+	gotRule, err := store.GetContainmentRule(rule.RuleID)
+	if err != nil {
+		t.Fatalf("GetContainmentRule: %v", err)
+	}
+	if gotRule.TargetID != rule.TargetID {
+		t.Fatalf("containment rule did not round-trip: %#v", gotRule)
+	}
+	mock.ExpectQuery("SELECT rule_json FROM containment_rules").
+		WithArgs("missing").
+		WillReturnError(sql.ErrNoRows)
+	if _, err := store.GetContainmentRule("missing"); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("GetContainmentRule missing err = %v, want ErrNotFound", err)
+	}
+	rule.Status = mission.ContainmentStatusLifted
+	rule.LiftedAt = testUnitNow()
+	mock.ExpectExec("UPDATE containment_rules SET").
+		WithArgs(rule.Status, sqlmock.AnyArg(), nullableTime(rule.ExpiresAt), nullableTime(rule.LiftedAt), rule.RuleID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateContainmentRule(rule); err != nil {
+		t.Fatalf("UpdateContainmentRule: %v", err)
+	}
+	mock.ExpectExec("UPDATE containment_rules SET").
+		WithArgs(rule.Status, sqlmock.AnyArg(), nullableTime(rule.ExpiresAt), nullableTime(rule.LiftedAt), rule.RuleID).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := store.UpdateContainmentRule(rule); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("UpdateContainmentRule missing err = %v, want ErrNotFound", err)
+	}
+	mock.ExpectQuery("SELECT rule_json").
+		WillReturnRows(sqlmock.NewRows([]string{"rule_json"}).AddRow(mustJSON(t, rule)))
+	rules, err := store.ListContainmentRules()
+	if err != nil {
+		t.Fatalf("ListContainmentRules: %v", err)
+	}
+	if len(rules) != 1 || rules[0].RuleID != rule.RuleID {
+		t.Fatalf("ListContainmentRules = %#v", rules)
+	}
+}
+
+func TestPostgresStoreListMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	identity := sampleAgentIdentity()
+	mock.ExpectQuery("SELECT identity_json").
+		WillReturnRows(sqlmock.NewRows([]string{"identity_json"}).AddRow(mustJSON(t, identity)))
+	identities, err := store.ListAgentIdentities()
+	if err != nil {
+		t.Fatalf("ListAgentIdentities: %v", err)
+	}
+	if len(identities) != 1 || identities[0].AgentID != identity.AgentID {
+		t.Fatalf("ListAgentIdentities = %#v", identities)
+	}
+
+	m := sampleMission()
+	mock.ExpectQuery("SELECT mission_json").
+		WillReturnRows(sqlmock.NewRows([]string{"mission_json"}).AddRow(mustJSON(t, m)))
+	missions, err := store.ListMissions()
+	if err != nil {
+		t.Fatalf("ListMissions: %v", err)
+	}
+	if len(missions) != 1 || missions[0].MissionRef != m.MissionRef {
+		t.Fatalf("ListMissions = %#v", missions)
+	}
+
+	expansion := sampleExpansionRequest()
+	mock.ExpectQuery("SELECT expansion_json").
+		WillReturnRows(sqlmock.NewRows([]string{"expansion_json"}).AddRow(mustJSON(t, expansion)))
+	expansions, err := store.ListExpansionRequests()
+	if err != nil {
+		t.Fatalf("ListExpansionRequests: %v", err)
+	}
+	if len(expansions) != 1 || expansions[0].ExpansionID != expansion.ExpansionID {
+		t.Fatalf("ListExpansionRequests = %#v", expansions)
+	}
+
+	contract := sampleToolContract()
+	mock.ExpectQuery("SELECT contract_json").
+		WillReturnRows(sqlmock.NewRows([]string{"contract_json"}).AddRow(mustJSON(t, contract)))
+	contracts, err := store.ListToolContracts()
+	if err != nil {
+		t.Fatalf("ListToolContracts: %v", err)
+	}
+	if len(contracts) != 1 || contracts[0].ToolName != contract.ToolName {
+		t.Fatalf("ListToolContracts = %#v", contracts)
+	}
+
+	projection := sampleProjection()
+	mock.ExpectQuery("SELECT projection_json").
+		WillReturnRows(sqlmock.NewRows([]string{"projection_json"}).AddRow(mustJSON(t, projection)))
+	projections, err := store.ListProjections()
+	if err != nil {
+		t.Fatalf("ListProjections: %v", err)
+	}
+	if len(projections) != 1 || projections[0].ProjectionID != projection.ProjectionID {
+		t.Fatalf("ListProjections = %#v", projections)
+	}
+
+	lease := sampleMissionLease()
+	mock.ExpectQuery("SELECT lease_json").
+		WillReturnRows(sqlmock.NewRows([]string{"lease_json"}).AddRow(mustJSON(t, lease)))
+	leases, err := store.ListMissionLeases()
+	if err != nil {
+		t.Fatalf("ListMissionLeases: %v", err)
+	}
+	if len(leases) != 1 || leases[0].LeaseID != lease.LeaseID {
+		t.Fatalf("ListMissionLeases = %#v", leases)
+	}
+}
+
 func TestPostgresStoreHelpers(t *testing.T) {
+	store := &PostgresStore{logger: slog.Default()}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close nil db: %v", err)
+	}
+	store.logSlowQuery("fast", time.Now())
+	store.logSlowQuery("slow", time.Now().Add(-200*time.Millisecond))
+
 	if !isUniqueViolation(&pq.Error{Code: "23505"}) {
 		t.Fatal("expected unique violation")
 	}
@@ -344,6 +1001,18 @@ func sampleProposal() mission.MissionProposal {
 	}
 }
 
+func sampleAgentIdentity() mission.AgentIdentity {
+	return mission.AgentIdentity{
+		AgentID:       "agt_test",
+		TenantID:      "tenant_1",
+		Agent:         mission.Agent{Provider: "https://agents.example.com", ClientID: "research-agent", InstanceID: "inst_123", KeyThumbprint: "sha256:key"},
+		PublicKey:     "public-key",
+		KeyThumbprint: "sha256:key",
+		Status:        mission.AgentStatusActive,
+		CreatedAt:     testUnitNow(),
+	}
+}
+
 func sampleMission() mission.Mission {
 	proposal := sampleProposal()
 	return mission.Mission{
@@ -373,6 +1042,137 @@ func sampleEvent() mission.Event {
 			"decision": "allow",
 		},
 		OccurredAt: testUnitNow(),
+	}
+}
+
+func sampleExpansionRequest() mission.ExpansionRequest {
+	return mission.ExpansionRequest{
+		ExpansionID:        "mex_test",
+		MissionRef:         "mref_test",
+		MissionVersionSeen: 1,
+		TenantID:           "tenant_1",
+		Requester:          mission.Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Action:             mission.Action{Type: "tool_call", Resource: mission.ActionResource{Type: "slack_channel", ID: "board"}, Operation: "post_update"},
+		RequestedAuthority: mission.AuthorityRegion{Resources: []mission.ResourceGrant{{Type: "slack_channel", ID: "board", Actions: []string{"post_update"}}}},
+		Status:             mission.ExpansionStatusPending,
+		CreatedAt:          testUnitNow(),
+	}
+}
+
+func sampleEvaluationEvidence() mission.EvaluationEvidence {
+	return mission.EvaluationEvidence{
+		EvidenceID:     "mevd_test",
+		MissionRef:     "mref_test",
+		MissionVersion: 1,
+		TenantID:       "tenant_1",
+		PolicyVersion:  mission.DefaultPolicyVersionID,
+		Actor:          mission.Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Action:         mission.Action{Type: "tool_call", Resource: mission.ActionResource{Type: "drive_folder", ID: "board"}, Operation: "read"},
+		ContextHash:    "sha256:test",
+		Decision:       mission.DecisionAllow,
+		Artifact:       "artifact",
+		CreatedAt:      testUnitNow(),
+	}
+}
+
+func sampleToolContract() mission.ToolContract {
+	return mission.ToolContract{
+		ToolName:        "drive.read",
+		ResourceType:    "drive_folder",
+		ResourceIDParam: "folder_id",
+		Operation:       "read",
+		ActionType:      "tool_call",
+		RequiredContext: []string{"finance.close.status"},
+		CreatedAt:       testUnitNow(),
+	}
+}
+
+func sampleProjection() mission.Projection {
+	return mission.Projection{
+		ProjectionID:   "mprj_test",
+		MissionRef:     "mref_test",
+		MissionVersion: 1,
+		TenantID:       "tenant_1",
+		Type:           mission.ProjectionTypeMCPContext,
+		Actor:          mission.Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Token:          "projection-token",
+		Status:         mission.ProjectionStatusActive,
+		IssuedAt:       testUnitNow(),
+		ExpiresAt:      testUnitNow().Add(5 * time.Minute),
+	}
+}
+
+func sampleMissionLease() mission.MissionLease {
+	return mission.MissionLease{
+		LeaseID:        "mlse_test",
+		MissionRef:     "mref_test",
+		MissionVersion: 1,
+		TenantID:       "tenant_1",
+		Actor:          mission.Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		CreatedAt:      testUnitNow(),
+		ExpiresAt:      testUnitNow().Add(time.Minute),
+	}
+}
+
+func sampleApprovalRule() mission.ApprovalRule {
+	return mission.ApprovalRule{
+		RuleID:            "apr_test",
+		TenantID:          "tenant_1",
+		AppliesTo:         mission.ApprovalAppliesExpansion,
+		ResourceType:      "slack_channel",
+		ResourceID:        "board",
+		Operation:         "post_update",
+		RiskLevel:         "high",
+		RequiredApprovals: 2,
+		AllowedIssuers:    []string{"https://idp.example.com"},
+		CreatedAt:         testUnitNow(),
+	}
+}
+
+func sampleApprovalRecord() mission.ApprovalRecord {
+	return mission.ApprovalRecord{
+		ApprovalID: "aprv_test",
+		RuleID:     "apr_test",
+		TargetType: mission.ApprovalTargetExpansion,
+		TargetID:   "mex_test",
+		TenantID:   "tenant_1",
+		Approver:   mission.Principal{Subject: "alice@example.com", Issuer: "https://idp.example.com"},
+		CreatedAt:  testUnitNow(),
+	}
+}
+
+func sampleAuthorityNegotiation() mission.AuthorityNegotiation {
+	return mission.AuthorityNegotiation{
+		NegotiationID:  "mneg_test",
+		MissionRef:     "mref_test",
+		MissionVersion: 1,
+		TenantID:       "tenant_1",
+		Actor:          mission.Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		RequestedAuthority: mission.AuthorityRegion{
+			Resources: []mission.ResourceGrant{{Type: "drive_folder", ID: "board", Actions: []string{"read", "delete"}}},
+		},
+		ProposedAuthority: mission.AuthorityRegion{
+			Resources: []mission.ResourceGrant{{Type: "drive_folder", ID: "board", Actions: []string{"read"}}},
+		},
+		DeniedAuthority: mission.AuthorityRegion{
+			Resources: []mission.ResourceGrant{{Type: "drive_folder", ID: "board", Actions: []string{"delete"}}},
+		},
+		Status:    mission.NegotiationStatusCounteroffered,
+		CreatedAt: testUnitNow(),
+	}
+}
+
+func sampleContainmentRule() mission.ContainmentRule {
+	return mission.ContainmentRule{
+		RuleID:     "ctr_test",
+		TenantID:   "tenant_1",
+		TargetType: mission.ContainmentTargetAgent,
+		TargetID:   "inst_123",
+		Status:     mission.ContainmentStatusActive,
+		Reason:     "unit test",
+		CreatedBy:  mission.Principal{Subject: "security@example.com", Issuer: "https://idp.example.com"},
+		CreatedAt:  testUnitNow(),
+		ExpiresAt:  testUnitNow().Add(time.Hour),
 	}
 }
 

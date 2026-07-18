@@ -37,7 +37,7 @@ func TestCreateProposalValidationAndDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProposal with defaults: %v", err)
 	}
-	proposal, err := service.store.GetProposal(resp.ProposalID)
+	proposal, err := service.missions.GetProposal(resp.ProposalID)
 	if err != nil {
 		t.Fatalf("GetProposal: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestEvaluateExpiredUnauthorizedStaleAndExpansionBranches(t *testing.T) {
 		t.Fatalf("Introspect: %v", err)
 	}
 	stored.Version = 3
-	if err := service.store.UpdateMission(stored); err != nil {
+	if err := service.missions.UpdateMission(stored); err != nil {
 		t.Fatalf("UpdateMission: %v", err)
 	}
 
@@ -149,7 +149,7 @@ func TestResumeBranches(t *testing.T) {
 
 	stored, _ := service.Introspect(mission.MissionRef)
 	stored.Version = 5
-	_ = service.store.UpdateMission(stored)
+	_ = service.missions.UpdateMission(stored)
 	stale, err := service.Resume(mission.MissionRef, ResumeRequest{
 		MissionVersionSeen: 1,
 		Actor:              Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
@@ -216,20 +216,20 @@ func TestDelegateFailureBranches(t *testing.T) {
 
 	stored, _ := service.Introspect(parent.MissionRef)
 	stored.Delegation.Permitted = false
-	_ = service.store.UpdateMission(stored)
+	_ = service.missions.UpdateMission(stored)
 	if _, err := service.Delegate(parent.MissionRef, DelegationRequest{DelegatingActor: Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"}}); err == nil {
 		t.Fatal("expected delegation not permitted error")
 	}
 
 	stored.Delegation.Permitted = true
 	stored.Delegation.CurrentDepth = stored.Delegation.MaxDepth
-	_ = service.store.UpdateMission(stored)
+	_ = service.missions.UpdateMission(stored)
 	if _, err := service.Delegate(parent.MissionRef, DelegationRequest{DelegatingActor: Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"}}); err == nil {
 		t.Fatal("expected delegation depth exceeded error")
 	}
 
 	stored.Delegation.CurrentDepth = 0
-	_ = service.store.UpdateMission(stored)
+	_ = service.missions.UpdateMission(stored)
 	if _, err := service.Delegate(parent.MissionRef, DelegationRequest{
 		DelegatingActor: Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
 		TargetAgent:     Agent{Provider: "https://agents.example.com", ClientID: "child", InstanceID: "inst_child"},

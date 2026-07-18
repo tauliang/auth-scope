@@ -8,7 +8,6 @@ import (
 )
 
 type fakeOutboxStore struct {
-	*MemoryStore
 	cancel context.CancelFunc
 	events []OutboxEvent
 	err    error
@@ -24,8 +23,7 @@ func (s *fakeOutboxStore) PublishOutboxEvents() ([]OutboxEvent, error) {
 func TestOutboxPublisherPublishesUntilContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	store := &fakeOutboxStore{
-		MemoryStore: NewMemoryStore(),
-		cancel:      cancel,
+		cancel: cancel,
 		events: []OutboxEvent{{
 			ID:        "outbox-1",
 			Type:      "mission.evaluated",
@@ -46,9 +44,8 @@ func TestOutboxPublisherPublishesUntilContextCanceled(t *testing.T) {
 func TestOutboxPublisherContinuesAfterPublishError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	store := &fakeOutboxStore{
-		MemoryStore: NewMemoryStore(),
-		cancel:      cancel,
-		err:         errors.New("publish failed"),
+		cancel: cancel,
+		err:    errors.New("publish failed"),
 	}
 
 	publisher := NewOutboxPublisher(store, time.Nanosecond)

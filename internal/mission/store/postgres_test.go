@@ -2,7 +2,10 @@ package store_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -32,6 +35,10 @@ func TestMigrationNamesAreEmbeddedInOrder(t *testing.T) {
 		"migrations/001_initial_schema.up.sql",
 		"migrations/002_outbox_table.up.sql",
 		"migrations/003_outbox_processed_table.up.sql",
+		"migrations/004_agent_identities.up.sql",
+		"migrations/005_governance_controls.up.sql",
+		"migrations/006_advanced_governance.up.sql",
+		"migrations/007_grand_governance.up.sql",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("MigrationNames() = %#v, want %#v", got, want)
@@ -84,6 +91,32 @@ func runStoreConformance(t *testing.T, store mission.Store) {
 	t.Helper()
 	service := mission.NewService(store, fixedClock{now: testNow()})
 
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	agentResp, err := service.RegisterAgent(mission.RegisterAgentRequest{
+		TenantID:  "demo",
+		Agent:     mission.Agent{Provider: "https://agents.example.com", ClientID: "research-agent", InstanceID: "inst_123"},
+		PublicKey: base64.RawURLEncoding.EncodeToString(publicKey),
+	})
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	identity, err := store.GetAgentIdentity(agentResp.AgentID)
+	if err != nil {
+		t.Fatalf("GetAgentIdentity: %v", err)
+	}
+	if identity.KeyThumbprint != agentResp.KeyThumbprint {
+		t.Fatalf("identity thumbprint = %q, want %q", identity.KeyThumbprint, agentResp.KeyThumbprint)
+	}
+	body := []byte(`{"probe":true}`)
+	nonce := "integration-nonce"
+	signature := mission.EncodeAgentSignature(ed25519.Sign(privateKey, []byte(mission.CanonicalAgentSigningString("POST", "/access/v1/evaluation", body, nonce))))
+	if _, err := service.VerifyAgentRequestSignature("POST", "/access/v1/evaluation", body, agentResp.AgentID, nonce, signature); err != nil {
+		t.Fatalf("VerifyAgentRequestSignature: %v", err)
+	}
+
 	proposalResp, err := service.CreateProposal(validProposalRequest())
 	if err != nil {
 		t.Fatalf("CreateProposal: %v", err)
@@ -127,6 +160,54 @@ func runStoreConformance(t *testing.T, store mission.Store) {
 	}
 	if allowed.Decision != mission.DecisionAllow {
 		t.Fatalf("Evaluate decision = %s, want %s", allowed.Decision, mission.DecisionAllow)
+	}
+	verified := service.VerifyDecisionArtifactEvidence(mission.VerifyDecisionArtifactRequest{DecisionArtifact: allowed.DecisionArtifact})
+	if !verified.Valid || verified.Evidence == nil {
+		t.Fatalf("VerifyDecisionArtifactEvidence = %#v, want valid with evidence", verified)
+	}
+
+	if _, err := service.RegisterToolContract(mission.ToolContract{
+		ToolName:        "drive.read",
+		ResourceType:    "drive_folder",
+		ResourceIDParam: "folder_id",
+		Operation:       "read",
+		RequiredContext: []string{"finance.close.status"},
+	}); err != nil {
+		t.Fatalf("RegisterToolContract: %v", err)
+	}
+	if _, err := store.GetToolContract("drive.read"); err != nil {
+		t.Fatalf("GetToolContract: %v", err)
+	}
+	toolDecision, err := service.AuthorizeToolCall(mission.AuthorizeToolCallRequest{
+		MissionRef:         missionResp.MissionRef,
+		MissionVersionSeen: missionResp.MissionVersion,
+		Actor:              mission.Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		ToolName:           "drive.read",
+		Arguments:          map[string]any{"folder_id": "board"},
+		Context:            map[string]any{"finance.close.status": "open"},
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeToolCall: %v", err)
+	}
+	if toolDecision.Decision != mission.DecisionAllow {
+		t.Fatalf("AuthorizeToolCall decision = %s, want %s", toolDecision.Decision, mission.DecisionAllow)
+	}
+
+	expansionEval, err := service.Evaluate(missionResp.MissionRef, mission.EvaluateRequest{
+		MissionVersionSeen: missionResp.MissionVersion,
+		Actor:              mission.Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Action:             mission.Action{Type: "tool_call", Resource: mission.ActionResource{Type: "slack_channel", ID: "board"}, Operation: "post_update"},
+		Context:            map[string]any{"finance.close.status": "open", "risk": "high", "reversible": false},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate expansion: %v", err)
+	}
+	expansionID, _ := expansionEval.Constraints["expansion_request_id"].(string)
+	if expansionID == "" {
+		t.Fatalf("expected expansion id in evaluation: %#v", expansionEval)
+	}
+	if _, err := store.GetExpansionRequest(expansionID); err != nil {
+		t.Fatalf("GetExpansionRequest: %v", err)
 	}
 
 	child, err := service.Delegate(missionResp.MissionRef, mission.DelegationRequest{

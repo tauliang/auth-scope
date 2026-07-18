@@ -5,6 +5,7 @@
 The first slice is intentionally small and runnable:
 
 - Go HTTP service with in-memory and PostgreSQL-backed stores
+- React operator console for authority review, intervention, and audit workflows
 - Embedded PostgreSQL migrations and transactional outbox publishing
 - Agent identity registry with Ed25519 request signatures and nonce replay protection
 - AuthZEN-style runtime authorization endpoints for PEP/PDP integration
@@ -27,16 +28,18 @@ The first slice is intentionally small and runnable:
 
 ## Run
 
-Start the service with Docker Compose:
+Start PostgreSQL, the API, and the operator console with Docker Compose:
 
 ```sh
-docker-compose up
+docker compose up --build
 ```
 
-The service will be available at `http://localhost:8080`. Docker Compose also starts PostgreSQL, and the service applies embedded migrations automatically when `DATABASE_URL` is set. Override the host ports with `AUTH_SCOPE_PORT` and `AUTH_SCOPE_POSTGRES_PORT`.
+Open the operator console at `http://localhost:3000` and authenticate with the development token `dev-compose-admin-alice`. The API remains available at `http://localhost:8080`. The service applies embedded migrations automatically when `DATABASE_URL` is set.
+
+Override any host port when needed:
 
 ```sh
-AUTH_SCOPE_PORT=9090 AUTH_SCOPE_POSTGRES_PORT=15432 docker-compose up
+AUTH_SCOPE_FRONTEND_PORT=3100 AUTH_SCOPE_PORT=9090 AUTH_SCOPE_POSTGRES_PORT=15432 docker compose up --build
 ```
 
 Run it locally without Docker:
@@ -55,6 +58,8 @@ AUTH_SCOPE_ADMIN_CREDENTIALS='[{"token":"alice-secret","subject":"alice@example.
 
 The request body cannot select its approver or containment administrator. The service derives that identity from the bearer credential. Docker Compose includes development-only Alice and Bob credentials; use `dev-compose-admin-alice` and `dev-compose-admin-bob` when exercising the examples locally.
 
+The Compose credentials are intentionally local-only. A production deployment should place the console and API behind the organization authentication boundary and supply administrator credentials from its identity integration; do not ship the static development tokens.
+
 ```sh
 AUTH_SCOPE_ADDR=:9090 go run ./cmd/auth-scope
 ```
@@ -72,12 +77,36 @@ go test ./... -coverprofile=coverage.out
 go tool cover -func=coverage.out
 ```
 
+Frontend checks:
+
+```sh
+cd frontend
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test:coverage
+pnpm build
+pnpm e2e
+```
+
+The frontend enforces 80% minimum coverage for statements, branches, functions, and lines. See [`frontend/README.md`](frontend/README.md) for local development and API proxy details.
+
 ## API
 
 ```text
 GET  /healthz
 GET  /.well-known/mission-authority
 GET  /.well-known/authzen-configuration
+GET  /v1/admin/session
+GET  /v1/operations/summary
+GET  /v1/missions
+GET  /v1/mission-proposals
+GET  /v1/mission-proposals/{proposal_id}
+GET  /v1/expansion-requests
+GET  /v1/agents
+GET  /v1/tool-contracts
+GET  /v1/projections
+GET  /v1/containment-rules/{rule_id}
 POST /access/v1/evaluation
 POST /access/v1/evaluations
 POST /v1/agents
@@ -181,8 +210,9 @@ Approve it:
 
 ```sh
 curl -s http://localhost:8080/v1/mission-proposals/{proposal_id}/approve \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
   -H 'content-type: application/json' \
-  -d '{"approver": {"subject": "alice@example.com", "issuer": "https://idp.example.com"}, "approval_evidence": {"method": "demo"}}'
+  -d '{"approval_evidence": {"method": "demo"}}'
 ```
 
 Evaluate an action:
@@ -202,8 +232,9 @@ Risky out-of-scope actions return `require_approval` and create a pending missio
 
 ```sh
 curl -s http://localhost:8080/v1/expansion-requests/{expansion_id}/approve \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
   -H 'content-type: application/json' \
-  -d '{"approver": {"subject": "alice@example.com", "issuer": "https://idp.example.com"}, "approval_evidence": {"method": "demo"}}'
+  -d '{"approval_evidence": {"method": "demo"}}'
 ```
 
 Negotiate a requested authority change before creating an expansion. Fully safe requests return `accepted`; partially safe requests return `counteroffered` with `proposed_authority` and `denied_authority`; risky out-of-scope requests can return `requires_human_approval`:
@@ -233,6 +264,7 @@ Register a tool contract and authorize a tool call through the mission evaluator
 
 ```sh
 curl -s http://localhost:8080/v1/tool-contracts \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
   -H 'content-type: application/json' \
   -d '{
     "tool_name": "drive.read",
@@ -291,8 +323,8 @@ Require multiple approvers for a sensitive expansion:
 
 ```sh
 curl -s http://localhost:8080/v1/approval-rules \
-	  -H "authorization: Bearer ${ADMIN_TOKEN}" \
-	  -H 'content-type: application/json' \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
   -d '{
     "tenant_id": "demo",
     "applies_to": "expansion",
@@ -305,37 +337,37 @@ curl -s http://localhost:8080/v1/approval-rules \
   }'
 
 curl -s http://localhost:8080/v1/expansion-requests/{expansion_id}/approvals \
-	  -H "authorization: Bearer ${ADMIN_TOKEN}" \
-	  -H 'content-type: application/json' \
-	  -d '{"reason": "reviewed and approved"}'
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
+  -d '{"reason": "reviewed and approved"}'
 ```
 
 Gateways can subscribe to a Server-Sent Events snapshot stream:
 
 ```sh
 curl -N http://localhost:8080/v1/events/stream \
-	  -H "authorization: Bearer ${ADMIN_TOKEN}"
+  -H "authorization: Bearer ${ADMIN_TOKEN}"
 ```
 
 Create a containment rule during an incident. Active containment blocks evaluation, manual expansion, delegation, projection issuance/verification, lease creation/refresh, and resume when the mission, tenant, agent, principal, tool, or resource matches:
 
 ```sh
 curl -s http://localhost:8080/v1/containment-rules \
-	  -H "authorization: Bearer ${ADMIN_TOKEN}" \
-	  -H 'content-type: application/json' \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
   -d '{
     "tenant_id": "demo",
     "target_type": "agent",
-	    "target_id": "inst_123",
-	    "reason": "runtime attestation failed"
-	  }'
+    "target_id": "inst_123",
+    "reason": "runtime attestation failed"
+  }'
 
 curl -s http://localhost:8080/v1/containment-rules/{rule_id}/blast-radius \
-	  -H "authorization: Bearer ${ADMIN_TOKEN}"
+  -H "authorization: Bearer ${ADMIN_TOKEN}"
 
 curl -s http://localhost:8080/v1/containment-rules/{rule_id}/lift \
-	  -H "authorization: Bearer ${ADMIN_TOKEN}" \
-	  -H 'content-type: application/json' \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
   -d '{"reason": "runtime re-attested"}'
 ```
 
@@ -343,9 +375,9 @@ Inspect accountability lineage for a mission or agent:
 
 ```sh
 curl -s http://localhost:8080/v1/missions/{mission_ref}/lineage \
-	  -H "authorization: Bearer ${ADMIN_TOKEN}"
+  -H "authorization: Bearer ${ADMIN_TOKEN}"
 curl -s http://localhost:8080/v1/agents/inst_123/lineage \
-	  -H "authorization: Bearer ${ADMIN_TOKEN}"
+  -H "authorization: Bearer ${ADMIN_TOKEN}"
 ```
 
 AuthZEN-style evaluation:

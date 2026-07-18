@@ -160,6 +160,31 @@ func (s *MemoryStore) GetProposal(id string) (MissionProposal, error) {
 	return proposal, nil
 }
 
+func (s *MemoryStore) ListProposals() ([]MissionProposal, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	proposals := make([]MissionProposal, 0, len(s.proposals))
+	for _, proposal := range s.proposals {
+		proposals = append(proposals, proposal)
+	}
+	slices.SortFunc(proposals, func(a, b MissionProposal) int {
+		if a.CreatedAt.Equal(b.CreatedAt) {
+			if a.ProposalID < b.ProposalID {
+				return -1
+			}
+			if a.ProposalID > b.ProposalID {
+				return 1
+			}
+			return 0
+		}
+		if a.CreatedAt.Before(b.CreatedAt) {
+			return -1
+		}
+		return 1
+	})
+	return proposals, nil
+}
+
 func (s *MemoryStore) DeleteProposal(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

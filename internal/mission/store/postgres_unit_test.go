@@ -230,6 +230,16 @@ func TestPostgresStoreProposalMethods(t *testing.T) {
 		t.Fatalf("GetProposal missing err = %v, want ErrNotFound", err)
 	}
 
+	mock.ExpectQuery("SELECT proposal_json").
+		WillReturnRows(sqlmock.NewRows([]string{"proposal_json"}).AddRow(proposalJSON))
+	proposals, err := store.ListProposals()
+	if err != nil {
+		t.Fatalf("ListProposals: %v", err)
+	}
+	if len(proposals) != 1 || proposals[0].ProposalID != proposal.ProposalID {
+		t.Fatalf("ListProposals = %#v", proposals)
+	}
+
 	mock.ExpectExec("DELETE FROM mission_proposals").WithArgs(proposal.ProposalID).WillReturnResult(sqlmock.NewResult(0, 1))
 	if err := store.DeleteProposal(proposal.ProposalID); err != nil {
 		t.Fatalf("DeleteProposal: %v", err)

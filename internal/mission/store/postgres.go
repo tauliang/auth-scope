@@ -348,6 +348,42 @@ func (s *PostgresStore) GetProposal(id string) (mission.MissionProposal, error) 
 	return proposal, nil
 }
 
+// ListProposals lists mission proposals in deterministic creation order.
+func (s *PostgresStore) ListProposals() ([]mission.MissionProposal, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListProposals", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT proposal_json
+		FROM mission_proposals
+		ORDER BY created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list proposals: %w", err)
+	}
+	defer rows.Close()
+
+	proposals := make([]mission.MissionProposal, 0)
+	for rows.Next() {
+		var proposalJSON []byte
+		if err := rows.Scan(&proposalJSON); err != nil {
+			return nil, fmt.Errorf("scan proposal: %w", err)
+		}
+		var proposal mission.MissionProposal
+		if err := json.Unmarshal(proposalJSON, &proposal); err != nil {
+			return nil, fmt.Errorf("unmarshal proposal: %w", err)
+		}
+		proposals = append(proposals, proposal)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate proposals: %w", err)
+	}
+	return proposals, nil
+}
+
 // DeleteProposal deletes a mission proposal by ID.
 func (s *PostgresStore) DeleteProposal(id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -63,6 +63,19 @@ type AuthZENAPI interface {
 	EvaluateAuthZENBatch(AuthZENEvaluationsRequest) (AuthZENEvaluationsResponse, error)
 }
 
+type OperatorAPI interface {
+	OperationsSummary(ListQuery) (OperationsSummary, error)
+	ListMissions(ListQuery) (CollectionPage[Mission], error)
+	ListProposals(ListQuery) (CollectionPage[MissionProposal], error)
+	GetProposal(string) (MissionProposal, error)
+	ListExpansions(ListQuery) (CollectionPage[ExpansionRequest], error)
+	ListAgents(ListQuery) (CollectionPage[AgentIdentity], error)
+	ListToolContracts(ListQuery) (CollectionPage[ToolContract], error)
+	ListProjections(ListQuery) (CollectionPage[Projection], error)
+	GetContainmentRule(string) (ContainmentRule, error)
+	ListEvents(ListQuery) (CollectionPage[Event], error)
+}
+
 type HandlerServices struct {
 	Identity        IdentityAPI
 	Mission         MissionAPI
@@ -70,4 +83,5 @@ type HandlerServices struct {
 	Projection      ProjectionAPI
 	GrandGovernance GrandGovernanceAPI
 	AuthZEN         AuthZENAPI
+	Operator        OperatorAPI
 }

@@ -67,16 +67,30 @@ func contains(values []string, want string) bool {
 }
 
 func evaluateConditions(conditions []Condition, context map[string]any) (bool, string, error) {
+	ok, failedCondition, _, err := evaluateConditionsWithEvidence(conditions, context)
+	return ok, failedCondition, err
+}
+
+func evaluateConditionsWithEvidence(conditions []Condition, context map[string]any) (bool, string, []ConditionEvaluation, error) {
+	results := make([]ConditionEvaluation, 0, len(conditions))
 	for _, condition := range conditions {
 		ok, err := evaluateCondition(condition.Expression, context)
-		if err != nil {
-			return false, condition.ID, err
+		result := ConditionEvaluation{
+			ID:         condition.ID,
+			Expression: condition.Expression,
+			Result:     ok,
 		}
+		if err != nil {
+			result.Error = err.Error()
+			results = append(results, result)
+			return false, condition.ID, results, err
+		}
+		results = append(results, result)
 		if !ok {
-			return false, condition.ID, nil
+			return false, condition.ID, results, nil
 		}
 	}
-	return true, "", nil
+	return true, "", results, nil
 }
 
 func evaluateCondition(expression string, context map[string]any) (bool, error) {

@@ -1,0 +1,312 @@
+openapi: 3.1.0
+info:
+  title: Auth Scope Operator API
+  version: 1.0.0
+  description: Read and decision endpoints consumed by the Auth Scope operator console.
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+paths:
+  /v1/admin/session:
+    get:
+      operationId: getAdminSession
+      responses:
+        "200":
+          description: Authenticated administrator context.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSession" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/operations/summary:
+    get:
+      operationId: getOperationsSummary
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+      responses:
+        "200":
+          description: Current operator dashboard counters.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsSummary" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions:
+    get:
+      operationId: listMissions
+      parameters: &listParameters
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Status"
+        - $ref: "#/components/parameters/State"
+        - $ref: "#/components/parameters/Type"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Mission page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/mission-proposals:
+    get:
+      operationId: listMissionProposals
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Mission proposal page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProposalPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/mission-proposals/{proposal_id}:
+    get:
+      operationId: getMissionProposal
+      parameters:
+        - name: proposal_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Mission proposal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionProposal" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests:
+    get:
+      operationId: listExpansionRequests
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Expansion request page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpansionPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/agents:
+    get:
+      operationId: listAgents
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Agent identity page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/tool-contracts:
+    get:
+      operationId: listToolContracts
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Tool contract page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ToolContractPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/projections:
+    get:
+      operationId: listProjections
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Projection page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectionPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/events:
+    get:
+      operationId: listEvents
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Audit event page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/containment-rules/{rule_id}:
+    get:
+      operationId: getContainmentRule
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Containment rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContainmentRule" }
+        default: { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    Tenant:
+      name: tenant_id
+      in: query
+      schema: { type: string }
+    Query:
+      name: q
+      in: query
+      schema: { type: string }
+    Status:
+      name: status
+      in: query
+      schema: { type: string }
+    State:
+      name: state
+      in: query
+      schema: { type: string }
+    Type:
+      name: type
+      in: query
+      schema: { type: string }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200 }
+  responses:
+    Error:
+      description: Stable API error envelope.
+      headers:
+        X-Request-ID:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+  schemas:
+    ApiError:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }
+        message: { type: string }
+      required: [code, message]
+    Principal:
+      type: object
+      properties:
+        subject: { type: string }
+        issuer: { type: string }
+      required: [subject, issuer]
+    Agent:
+      type: object
+      properties:
+        provider: { type: string }
+        client_id: { type: string }
+        instance_id: { type: string }
+      required: [provider, client_id, instance_id]
+    ResourceGrant:
+      type: object
+      properties:
+        type: { type: string }
+        id: { type: string }
+        actions: { type: array, items: { type: string } }
+        constraints: { type: object, additionalProperties: true }
+      required: [type, id, actions]
+    AuthorityRegion:
+      type: object
+      properties:
+        resources: { type: array, items: { $ref: "#/components/schemas/ResourceGrant" } }
+        forbidden_actions: { type: array, items: { type: string } }
+      required: [resources]
+    Delegation:
+      type: object
+      additionalProperties: true
+    Lifecycle:
+      type: object
+      additionalProperties: true
+    Mission:
+      type: object
+      properties:
+        mission_id: { type: string }
+        mission_ref: { type: string }
+        tenant_id: { type: string }
+        state: { type: string }
+        version: { type: integer }
+        principal: { $ref: "#/components/schemas/Principal" }
+        agent: { $ref: "#/components/schemas/Agent" }
+        purpose: { type: object, additionalProperties: true }
+        authority_region: { $ref: "#/components/schemas/AuthorityRegion" }
+        conditions: { type: array, items: { type: object, additionalProperties: true } }
+        lifecycle: { $ref: "#/components/schemas/Lifecycle" }
+        delegation: { $ref: "#/components/schemas/Delegation" }
+      required: [mission_id, mission_ref, tenant_id, state, version, principal, agent, purpose, authority_region, lifecycle, delegation]
+    MissionProposal:
+      type: object
+      properties:
+        proposal_id: { type: string }
+        status: { type: string }
+        tenant_id: { type: string }
+        principal: { $ref: "#/components/schemas/Principal" }
+        agent: { $ref: "#/components/schemas/Agent" }
+        intent: { type: object, additionalProperties: true }
+        authority_region: { $ref: "#/components/schemas/AuthorityRegion" }
+        lifecycle: { $ref: "#/components/schemas/Lifecycle" }
+        delegation: { $ref: "#/components/schemas/Delegation" }
+        created_at: { type: string, format: date-time }
+      required: [proposal_id, status, tenant_id, principal, agent, intent, authority_region, lifecycle, delegation, created_at]
+    ExpansionRequest:
+      type: object
+      additionalProperties: true
+    AgentIdentity:
+      type: object
+      additionalProperties: true
+    ToolContract:
+      type: object
+      additionalProperties: true
+    Projection:
+      type: object
+      additionalProperties: true
+    EventRecord:
+      type: object
+      additionalProperties: true
+    ContainmentRule:
+      type: object
+      additionalProperties: true
+    AdminSession:
+      type: object
+      properties:
+        principal: { $ref: "#/components/schemas/Principal" }
+        capabilities: { type: object, additionalProperties: { type: boolean } }
+        api_version: { type: string }
+      required: [principal, capabilities, api_version]
+    OperationsSummary:
+      type: object
+      properties:
+        missions_total: { type: integer }
+        missions_by_state: { type: object, additionalProperties: { type: integer } }
+        pending_proposals: { type: integer }
+        pending_expansions: { type: integer }
+        active_containments: { type: integer }
+        active_agents: { type: integer }
+        active_projections: { type: integer }
+        recent_event_count: { type: integer }
+        service_capabilities: { type: object, additionalProperties: true }
+      required: [missions_total, missions_by_state, pending_proposals, pending_expansions, active_containments, active_agents, active_projections, recent_event_count, service_capabilities]
+    MissionPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Mission" } } } }] }
+    ProposalPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/MissionProposal" } } } }] }
+    ExpansionPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ExpansionRequest" } } } }] }
+    AgentPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/AgentIdentity" } } } }] }
+    ToolContractPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ToolContract" } } } }] }
+    ProjectionPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Projection" } } } }] }
+    EventPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/EventRecord" } } } }] }
+    Page:
+      type: object
+      properties:
+        items: { type: array, items: {} }
+        next_cursor: { type: string }
+        total: { type: integer }
+      required: [items, total]

@@ -13,6 +13,7 @@ type IdentityStore interface {
 type MissionStore interface {
 	SaveProposal(MissionProposal) error
 	GetProposal(string) (MissionProposal, error)
+	ListProposals() ([]MissionProposal, error)
 	DeleteProposal(string) error
 	SaveMission(Mission) error
 	GetMission(string) (Mission, error)

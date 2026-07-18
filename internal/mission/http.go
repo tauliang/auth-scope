@@ -28,6 +28,7 @@ func NewHandlerWithAdminAuthenticator(service *Service, authenticator AdminAuthe
 		Projection:      service,
 		GrandGovernance: service,
 		AuthZEN:         service,
+		Operator:        service,
 	}, authenticator)
 }
 
@@ -43,11 +44,17 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /access/v1/evaluation", h.authZENEvaluation)
 	mux.HandleFunc("POST /access/v1/evaluations", h.authZENEvaluations)
 	mux.HandleFunc("POST /v1/agents", h.registerAgent)
+	mux.Handle("GET /v1/admin/session", h.requireAdmin(http.HandlerFunc(h.adminSession)))
+	mux.Handle("GET /v1/operations/summary", h.requireAdmin(http.HandlerFunc(h.operationsSummary)))
+	mux.Handle("GET /v1/agents", h.requireAdmin(http.HandlerFunc(h.listAgents)))
 	mux.HandleFunc("GET /v1/agents/{agent_id}", h.getAgent)
 	mux.Handle("POST /v1/agents/{agent_id}/revoke", h.requireAdmin(http.HandlerFunc(h.revokeAgent)))
 	mux.HandleFunc("POST /v1/mission-proposals", h.createProposal)
+	mux.Handle("GET /v1/mission-proposals", h.requireAdmin(http.HandlerFunc(h.listProposals)))
+	mux.Handle("GET /v1/mission-proposals/{proposal_id}", h.requireAdmin(http.HandlerFunc(h.getProposal)))
 	mux.Handle("POST /v1/mission-proposals/{proposal_id}/approve", h.requireAdmin(http.HandlerFunc(h.approveProposal)))
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/evaluate", h.evaluate)
+	mux.Handle("GET /v1/missions", h.requireAdmin(http.HandlerFunc(h.listMissions)))
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/authority/negotiations", h.createAuthorityNegotiation)
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/expansion-requests", h.createExpansionRequest)
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/resume", h.resume)
@@ -58,14 +65,17 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("GET /v1/missions/{mission_ref}/lineage", h.requireAdmin(http.HandlerFunc(h.missionLineage)))
 	mux.Handle("GET /v1/agents/{agent_id}/lineage", h.requireAdmin(http.HandlerFunc(h.agentLineage)))
 	mux.Handle("GET /v1/expansion-requests/{expansion_id}", h.requireAdmin(http.HandlerFunc(h.getExpansionRequest)))
+	mux.Handle("GET /v1/expansion-requests", h.requireAdmin(http.HandlerFunc(h.listExpansions)))
 	mux.Handle("POST /v1/expansion-requests/{expansion_id}/approve", h.requireAdmin(http.HandlerFunc(h.approveExpansionRequest)))
 	mux.Handle("POST /v1/expansion-requests/{expansion_id}/deny", h.requireAdmin(http.HandlerFunc(h.denyExpansionRequest)))
 	mux.Handle("GET /v1/authority/negotiations/{negotiation_id}", h.requireAdmin(http.HandlerFunc(h.getAuthorityNegotiation)))
 	mux.HandleFunc("POST /v1/decision-artifacts/verify", h.verifyDecisionArtifact)
 	mux.Handle("POST /v1/tool-contracts", h.requireAdmin(http.HandlerFunc(h.registerToolContract)))
+	mux.Handle("GET /v1/tool-contracts", h.requireAdmin(http.HandlerFunc(h.listToolContracts)))
 	mux.Handle("GET /v1/tool-contracts/{tool_name}", h.requireAdmin(http.HandlerFunc(h.getToolContract)))
 	mux.HandleFunc("POST /v1/tool-calls/authorize", h.authorizeToolCall)
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/projections", h.createProjection)
+	mux.Handle("GET /v1/projections", h.requireAdmin(http.HandlerFunc(h.listProjections)))
 	mux.Handle("GET /v1/projections/{projection_id}/status", h.requireAdmin(http.HandlerFunc(h.getProjectionStatus)))
 	mux.Handle("POST /v1/projections/{projection_id}/revoke", h.requireAdmin(http.HandlerFunc(h.revokeProjection)))
 	mux.HandleFunc("POST /v1/projections/verify", h.verifyProjection)
@@ -76,6 +86,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("POST /v1/expansion-requests/{expansion_id}/approvals", h.requireAdmin(http.HandlerFunc(h.submitExpansionApproval)))
 	mux.Handle("POST /v1/containment-rules", h.requireAdmin(http.HandlerFunc(h.createContainmentRule)))
 	mux.Handle("GET /v1/containment-rules", h.requireAdmin(http.HandlerFunc(h.listContainmentRules)))
+	mux.Handle("GET /v1/containment-rules/{rule_id}", h.requireAdmin(http.HandlerFunc(h.getContainmentRule)))
 	mux.Handle("POST /v1/containment-rules/{rule_id}/lift", h.requireAdmin(http.HandlerFunc(h.liftContainmentRule)))
 	mux.Handle("GET /v1/containment-rules/{rule_id}/blast-radius", h.requireAdmin(http.HandlerFunc(h.containmentBlastRadius)))
 	mux.Handle("GET /v1/events", h.requireAdmin(http.HandlerFunc(h.events)))
@@ -677,10 +688,6 @@ func (h *Handler) agentLineage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *Handler) events(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"events": h.services.Mission.Events()})
-}
-
 func (h *Handler) eventsStream(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("content-type", "text/event-stream")
 	w.Header().Set("cache-control", "no-cache")
@@ -807,8 +814,24 @@ func writeServiceError(w http.ResponseWriter, err error) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
+	code := "bad_request"
+	switch status {
+	case http.StatusUnauthorized:
+		code = "authentication_required"
+	case http.StatusForbidden:
+		code = "forbidden"
+	case http.StatusNotFound:
+		code = "not_found"
+	case http.StatusConflict:
+		code = "conflict"
+	case http.StatusInternalServerError:
+		code = "internal_error"
+	}
+	message := strings.TrimSpace(err.Error())
 	writeJSON(w, status, map[string]any{
-		"error": strings.TrimSpace(err.Error()),
+		"error":   message,
+		"code":    code,
+		"message": message,
 	})
 }
 
@@ -820,9 +843,12 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func requestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("x-request-id") == "" {
-			r.Header.Set("x-request-id", newID("req"))
+		id := strings.TrimSpace(r.Header.Get("x-request-id"))
+		if id == "" {
+			id = newID("req")
+			r.Header.Set("x-request-id", id)
 		}
+		w.Header().Set("x-request-id", id)
 		next.ServeHTTP(w, r)
 	})
 }

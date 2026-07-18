@@ -1,10 +1,12 @@
 package mission
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -484,4 +486,50 @@ func newID(prefix string) string {
 		panic(errors.Join(fmt.Errorf("generate id"), err))
 	}
 	return prefix + "_" + hex.EncodeToString(buf[:])
+}
+
+// OutboxPublisher handles publishing events from the outbox table.
+type OutboxPublisher struct {
+	store   Store
+	interval time.Duration
+	logger  *slog.Logger
+}
+
+// NewOutboxPublisher creates a new outbox publisher.
+func NewOutboxPublisher(store Store, interval time.Duration) *OutboxPublisher {
+	return &OutboxPublisher{
+		store:    store,
+		interval: interval,
+		logger:   slog.Default().With("component", "outbox-publisher"),
+	}
+}
+
+// Start begins the polling loop to publish outbox events.
+func (p *OutboxPublisher) Start(ctx context.Context) error {
+	ticker := time.NewTicker(p.interval)
+	defer ticker.Stop()
+
+	p.logger.Info("outbox publisher started", "interval_ms", p.interval.Milliseconds())
+
+	for {
+		select {
+		case <-ctx.Done():
+			p.logger.Info("outbox publisher stopped")
+			return ctx.Err()
+		case <-ticker.C:
+			events, err := p.store.PublishOutboxEvents()
+			if err != nil {
+				p.logger.Error("failed to publish outbox events", "error", err)
+				continue
+			}
+
+			for _, event := range events {
+				p.logger.Info("published outbox event",
+					"id", event.ID,
+					"type", event.Type,
+					"mission_ref", event.MissionRef,
+				)
+			}
+		}
+	}
 }

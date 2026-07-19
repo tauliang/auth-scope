@@ -1029,6 +1029,220 @@ func TestPostgresStoreGitHubIntegrationMethods(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreOktaIntegrationMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	binding := sampleOktaAppBinding()
+	bindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("INSERT INTO okta_app_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.Issuer,
+			binding.ClientID,
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveOktaAppBinding(binding); err != nil {
+		t.Fatalf("SaveOktaAppBinding: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO okta_app_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.Issuer,
+			binding.ClientID,
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveOktaAppBinding(binding); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveOktaAppBinding duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json FROM okta_app_bindings").
+		WithArgs(binding.BindingID).
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(bindingJSON))
+	gotBinding, err := store.GetOktaAppBinding(binding.BindingID)
+	if err != nil {
+		t.Fatalf("GetOktaAppBinding: %v", err)
+	}
+	if gotBinding.BindingID != binding.BindingID {
+		t.Fatalf("GetOktaAppBinding = %#v", gotBinding)
+	}
+
+	binding.LastResolvedAt = testUnitNow()
+	binding.LastSubject = "00u1agent"
+	binding.LastResolutionStatus = mission.OktaResolutionStatusAccepted
+	updatedBindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("UPDATE okta_app_bindings").
+		WithArgs(nullableString(binding.TenantID), binding.Issuer, binding.ClientID, binding.MissionRef, binding.Status, updatedBindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateOktaAppBinding(binding); err != nil {
+		t.Fatalf("UpdateOktaAppBinding: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json").
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(updatedBindingJSON))
+	bindings, err := store.ListOktaAppBindings()
+	if err != nil {
+		t.Fatalf("ListOktaAppBindings: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].ClientID != binding.ClientID {
+		t.Fatalf("ListOktaAppBindings = %#v", bindings)
+	}
+}
+
+func TestPostgresStoreEntraIntegrationMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	registration := sampleEntraAppRegistration()
+	registrationJSON := mustJSON(t, registration)
+	mock.ExpectExec("INSERT INTO entra_app_registrations").
+		WithArgs(
+			registration.RegistrationID,
+			nullableString(registration.TenantID),
+			registration.Issuer,
+			registration.ClientID,
+			registration.MissionRef,
+			registration.Status,
+			registrationJSON,
+			registration.CreatedAt,
+			nullableTime(registration.LastResolvedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveEntraAppRegistration(registration); err != nil {
+		t.Fatalf("SaveEntraAppRegistration: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO entra_app_registrations").
+		WithArgs(
+			registration.RegistrationID,
+			nullableString(registration.TenantID),
+			registration.Issuer,
+			registration.ClientID,
+			registration.MissionRef,
+			registration.Status,
+			registrationJSON,
+			registration.CreatedAt,
+			nullableTime(registration.LastResolvedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveEntraAppRegistration(registration); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveEntraAppRegistration duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT registration_json FROM entra_app_registrations").
+		WithArgs(registration.RegistrationID).
+		WillReturnRows(sqlmock.NewRows([]string{"registration_json"}).AddRow(registrationJSON))
+	gotRegistration, err := store.GetEntraAppRegistration(registration.RegistrationID)
+	if err != nil {
+		t.Fatalf("GetEntraAppRegistration: %v", err)
+	}
+	if gotRegistration.RegistrationID != registration.RegistrationID {
+		t.Fatalf("GetEntraAppRegistration = %#v", gotRegistration)
+	}
+
+	registration.LastResolvedAt = testUnitNow()
+	registration.LastSubject = "user@example.onmicrosoft.com"
+	registration.LastResolutionStatus = mission.EntraResolutionStatusAccepted
+	updatedRegistrationJSON := mustJSON(t, registration)
+	mock.ExpectExec("UPDATE entra_app_registrations").
+		WithArgs(nullableString(registration.TenantID), registration.Issuer, registration.ClientID, registration.MissionRef, registration.Status, updatedRegistrationJSON, nullableTime(registration.LastResolvedAt), registration.RegistrationID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateEntraAppRegistration(registration); err != nil {
+		t.Fatalf("UpdateEntraAppRegistration: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT registration_json").
+		WillReturnRows(sqlmock.NewRows([]string{"registration_json"}).AddRow(updatedRegistrationJSON))
+	registrations, err := store.ListEntraAppRegistrations()
+	if err != nil {
+		t.Fatalf("ListEntraAppRegistrations: %v", err)
+	}
+	if len(registrations) != 1 || registrations[0].ClientID != registration.ClientID {
+		t.Fatalf("ListEntraAppRegistrations = %#v", registrations)
+	}
+}
+
+func TestPostgresStoreSlackIntegrationMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	binding := sampleSlackWorkspaceBinding()
+	bindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("INSERT INTO slack_workspace_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.WorkspaceID,
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveSlackWorkspaceBinding(binding); err != nil {
+		t.Fatalf("SaveSlackWorkspaceBinding: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO slack_workspace_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.WorkspaceID,
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveSlackWorkspaceBinding(binding); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveSlackWorkspaceBinding duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json FROM slack_workspace_bindings").
+		WithArgs(binding.BindingID).
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(bindingJSON))
+	gotBinding, err := store.GetSlackWorkspaceBinding(binding.BindingID)
+	if err != nil {
+		t.Fatalf("GetSlackWorkspaceBinding: %v", err)
+	}
+	if gotBinding.BindingID != binding.BindingID {
+		t.Fatalf("GetSlackWorkspaceBinding = %#v", gotBinding)
+	}
+
+	binding.LastResolvedAt = testUnitNow()
+	binding.LastUserID = "U12345678"
+	binding.LastResolutionStatus = mission.SlackResolutionStatusAccepted
+	updatedBindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("UPDATE slack_workspace_bindings").
+		WithArgs(nullableString(binding.TenantID), binding.WorkspaceID, binding.MissionRef, binding.Status, updatedBindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateSlackWorkspaceBinding(binding); err != nil {
+		t.Fatalf("UpdateSlackWorkspaceBinding: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json").
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(updatedBindingJSON))
+	bindings, err := store.ListSlackWorkspaceBindings()
+	if err != nil {
+		t.Fatalf("ListSlackWorkspaceBindings: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].WorkspaceID != binding.WorkspaceID {
+		t.Fatalf("ListSlackWorkspaceBindings = %#v", bindings)
+	}
+}
+
 func TestPostgresStoreListMethods(t *testing.T) {
 	store, mock, cleanup := newMockPostgresStore(t)
 	defer cleanup()
@@ -1377,6 +1591,77 @@ func sampleGitHubWebhookDelivery() mission.GitHubWebhookDelivery {
 			"event":      "pull_request",
 			"repository": "tauliang/auth-scope",
 		},
+	}
+}
+
+func sampleOktaAppBinding() mission.OktaAppBinding {
+	return mission.OktaAppBinding{
+		BindingID:             "okb_test",
+		TenantID:              "tenant_1",
+		Issuer:                "https://acme.okta.com/oauth2/default",
+		AuthorizationServerID: "default",
+		DiscoveryURL:          "https://acme.okta.com/oauth2/default/.well-known/openid-configuration",
+		JWKSURI:               "https://acme.okta.com/oauth2/default/v1/keys",
+		ClientID:              "0oaabc123client",
+		AppID:                 "0oaapp123",
+		AppLabel:              "Auth Scope Console",
+		MissionRef:            "mref_test",
+		RequiredGroups:        []string{"Mission Operators"},
+		AdminGroups:           []string{"Mission Admins"},
+		GroupClaim:            "groups",
+		SubjectClaim:          "sub",
+		ScopeClaim:            "scp",
+		GroupMatchMode:        mission.OktaGroupMatchAny,
+		Status:                mission.OktaAppBindingStatusActive,
+		CreatedBy:             mission.OktaPrincipal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
+		CreatedAt:             testUnitNow(),
+	}
+}
+
+func sampleEntraAppRegistration() mission.EntraAppRegistration {
+	return mission.EntraAppRegistration{
+		RegistrationID: "enr_test",
+		TenantID:       "tenant_1",
+		TenantName:     "Contoso",
+		Issuer:         "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0",
+		DiscoveryURL:   "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0/.well-known/openid-configuration",
+		JWKSURI:        "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/discovery/v2.0/keys",
+		ClientID:       "00000000-0000-0000-0000-000000000000",
+		AppID:          "app_entra_001",
+		AppName:        "Auth Scope Console",
+		MissionRef:     "mref_test",
+		RequiredGroups: []string{"Mission Operators"},
+		AdminGroups:    []string{"Mission Admins"},
+		GroupClaim:     "groups",
+		SubjectClaim:   "sub",
+		RolesClaim:     "roles",
+		GroupMatchMode: mission.EntraGroupMatchAny,
+		Status:         mission.EntraAppRegistrationStatusActive,
+		CreatedBy:      mission.EntraPrincipal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
+		CreatedAt:      testUnitNow(),
+	}
+}
+
+func sampleSlackWorkspaceBinding() mission.SlackWorkspaceBinding {
+	return mission.SlackWorkspaceBinding{
+		BindingID:       "slb_test",
+		TenantID:        "tenant_1",
+		WorkspaceID:     "T12345678",
+		WorkspaceName:   "Acme Corp",
+		WorkspaceURL:    "https://acme-corp.slack.com",
+		MissionRef:      "mref_test",
+		RequiredRoles:   []string{"Workspace Admin"},
+		AdminRoles:      []string{"Owner"},
+		AllowedChannels: []string{"C11111111"},
+		BlockedChannels: []string{"C99999999"},
+		AllowedUsers:    []string{"U12345678"},
+		AllowedActions:  []string{mission.SlackActionTypePostMessage},
+		RoleClaim:       "roles",
+		RoleMatchMode:   mission.SlackRoleMatchAny,
+		Status:          mission.SlackWorkspaceBindingStatusActive,
+		Metadata:        map[string]string{"environment": "production"},
+		CreatedBy:       mission.SlackPrincipal{UserID: "admin@example.com"},
+		CreatedAt:       testUnitNow(),
 	}
 }
 

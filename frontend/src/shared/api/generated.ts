@@ -660,6 +660,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/integrations/okta/app-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listOktaAppBindings"];
+        put?: never;
+        post: operations["createOktaAppBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/okta/authority-context/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolveOktaAuthorityContext"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/entra/app-registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listEntraAppRegistrations"];
+        put?: never;
+        post: operations["createEntraAppRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/entra/authority-context/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolveEntraAuthorityContext"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/slack/workspace-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSlackWorkspaceBindings"];
+        put?: never;
+        post: operations["createSlackWorkspaceBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/slack/message-actions/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["authorizeSlackMessageAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -984,6 +1080,333 @@ export interface components {
             evaluations: {
                 [key: string]: unknown;
             }[];
+        } & {
+            [key: string]: unknown;
+        };
+        CreateOktaAppBindingRequest: {
+            tenant_id?: string;
+            /** @description Okta issuer, for example https://example.okta.com/oauth2/default. */
+            issuer: string;
+            authorization_server_id?: string;
+            client_id: string;
+            app_id?: string;
+            app_label?: string;
+            mission_ref: string;
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            scope_claim?: string;
+            /** @enum {string} */
+            group_match_mode?: "any" | "all";
+            metadata?: {
+                [key: string]: string;
+            };
+        };
+        OktaAppBinding: {
+            binding_id: string;
+            tenant_id?: string;
+            issuer: string;
+            authorization_server_id?: string;
+            discovery_url?: string;
+            jwks_uri?: string;
+            client_id: string;
+            app_id?: string;
+            app_label?: string;
+            mission_ref: string;
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            scope_claim?: string;
+            group_match_mode?: string;
+            status: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_resolved_at?: string;
+            last_subject?: string;
+            last_resolution_status?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        OktaEvaluationRequest: {
+            mission_version_seen?: number;
+            actor: {
+                [key: string]: unknown;
+            };
+            action: {
+                type?: string;
+                name?: string;
+                resource?: {
+                    type: string;
+                    id: string;
+                };
+                operation?: string;
+            } & {
+                [key: string]: unknown;
+            };
+        };
+        ResolveOktaAuthorityContextRequest: {
+            tenant_id?: string;
+            mission_ref?: string;
+            issuer?: string;
+            client_id?: string;
+            subject?: string;
+            groups?: string[];
+            scopes?: string[];
+            claims?: {
+                [key: string]: unknown;
+            };
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: components["schemas"]["OktaEvaluationRequest"];
+        };
+        OktaAuthorityContextResponse: {
+            accepted: boolean;
+            status: string;
+            binding_id?: string;
+            tenant_id?: string;
+            mission_ref?: string;
+            issuer?: string;
+            client_id?: string;
+            subject?: string;
+            groups?: string[];
+            scopes?: string[];
+            admin: boolean;
+            reason_codes?: string[];
+            human_reason?: string;
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: {
+                [key: string]: unknown;
+            };
+            resolved_at?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CreateEntraAppRegistrationRequest: {
+            tenant_id?: string;
+            tenant_name?: string;
+            /** @description Microsoft Entra issuer, for example https://login.microsoftonline.com/{tenant}/v2.0. */
+            issuer: string;
+            client_id: string;
+            app_id?: string;
+            app_name?: string;
+            mission_ref: string;
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            roles_claim?: string;
+            /** @enum {string} */
+            group_match_mode?: "any" | "all";
+            metadata?: {
+                [key: string]: string;
+            };
+        };
+        EntraAppRegistration: {
+            registration_id: string;
+            tenant_id?: string;
+            tenant_name?: string;
+            issuer: string;
+            discovery_url?: string;
+            jwks_uri?: string;
+            client_id: string;
+            app_id?: string;
+            app_name?: string;
+            mission_ref: string;
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            roles_claim?: string;
+            group_match_mode?: string;
+            status: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_resolved_at?: string;
+            last_subject?: string;
+            last_resolution_status?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        EntraEvaluationRequest: {
+            mission_version_seen?: number;
+            actor: {
+                [key: string]: unknown;
+            };
+            action: {
+                type?: string;
+                name?: string;
+                resource?: {
+                    type: string;
+                    id: string;
+                };
+                operation?: string;
+            } & {
+                [key: string]: unknown;
+            };
+        };
+        ResolveEntraAuthorityContextRequest: {
+            tenant_id?: string;
+            mission_ref?: string;
+            issuer?: string;
+            client_id?: string;
+            subject?: string;
+            groups?: string[];
+            roles?: string[];
+            claims?: {
+                [key: string]: unknown;
+            };
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: components["schemas"]["EntraEvaluationRequest"];
+        };
+        EntraAuthorityContextResponse: {
+            accepted: boolean;
+            status: string;
+            registration_id?: string;
+            tenant_id?: string;
+            mission_ref?: string;
+            issuer?: string;
+            client_id?: string;
+            subject?: string;
+            groups?: string[];
+            roles?: string[];
+            admin: boolean;
+            reason_codes?: string[];
+            human_reason?: string;
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: {
+                [key: string]: unknown;
+            };
+            resolved_at?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SlackPrincipal: {
+            user_id?: string;
+            email?: string;
+        };
+        CreateSlackWorkspaceBindingRequest: {
+            tenant_id?: string;
+            workspace_id: string;
+            workspace_name?: string;
+            workspace_url?: string;
+            mission_ref: string;
+            required_roles?: string[];
+            admin_roles?: string[];
+            allowed_channels?: string[];
+            blocked_channels?: string[];
+            allowed_users?: string[];
+            allowed_actions?: ("post_message" | "edit_message" | "delete_message" | "react_message" | "start_thread")[];
+            role_claim?: string;
+            /** @enum {string} */
+            role_match_mode?: "any" | "all";
+            metadata?: {
+                [key: string]: string;
+            };
+        };
+        SlackWorkspaceBinding: {
+            binding_id: string;
+            tenant_id?: string;
+            workspace_id: string;
+            workspace_name?: string;
+            workspace_url?: string;
+            mission_ref: string;
+            required_roles?: string[];
+            admin_roles?: string[];
+            allowed_channels?: string[];
+            blocked_channels?: string[];
+            allowed_users?: string[];
+            allowed_actions?: ("post_message" | "edit_message" | "delete_message" | "react_message" | "start_thread")[];
+            role_claim?: string;
+            role_match_mode?: string;
+            status: string;
+            metadata?: {
+                [key: string]: string;
+            };
+            created_by?: components["schemas"]["SlackPrincipal"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_resolved_at?: string;
+            last_user_id?: string;
+            last_resolution_status?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SlackActionResource: {
+            type: string;
+            id: string;
+            channel_id?: string;
+        };
+        SlackMessageAction: {
+            type: string;
+            name?: string;
+            resource: components["schemas"]["SlackActionResource"];
+            operation: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SlackEvaluationRequest: {
+            mission_version_seen?: number;
+            actor: {
+                [key: string]: unknown;
+            };
+            action: components["schemas"]["SlackMessageAction"];
+        };
+        AuthorizeSlackMessageActionRequest: {
+            tenant_id?: string;
+            mission_ref?: string;
+            workspace_id: string;
+            user_id?: string;
+            email?: string;
+            roles?: string[];
+            channel_id?: string;
+            /** @enum {string} */
+            action: "post_message" | "edit_message" | "delete_message" | "react_message" | "start_thread";
+            claims?: {
+                [key: string]: unknown;
+            };
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: components["schemas"]["SlackEvaluationRequest"];
+        };
+        SlackMessageAuthorizationResponse: {
+            accepted: boolean;
+            status: string;
+            binding_id?: string;
+            tenant_id?: string;
+            mission_ref?: string;
+            workspace_id?: string;
+            user_id?: string;
+            email?: string;
+            roles?: string[];
+            channel_id?: string;
+            action?: string;
+            admin: boolean;
+            reason_codes?: string[];
+            human_reason?: string;
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: {
+                [key: string]: unknown;
+            };
+            resolved_at?: string;
         } & {
             [key: string]: unknown;
         };
@@ -2126,6 +2549,225 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GitHubCheckRunPlanResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listOktaAppBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Okta application bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        app_bindings: components["schemas"]["OktaAppBinding"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createOktaAppBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOktaAppBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description Okta application binding. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OktaAppBinding"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    resolveOktaAuthorityContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveOktaAuthorityContextRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical mission authority context resolved from verified Okta claims. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OktaAuthorityContextResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listEntraAppRegistrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entra application registration bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        app_registrations: components["schemas"]["EntraAppRegistration"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createEntraAppRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEntraAppRegistrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Entra application registration binding. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntraAppRegistration"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    resolveEntraAuthorityContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveEntraAuthorityContextRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical mission authority context resolved from verified Entra claims. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntraAuthorityContextResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listSlackWorkspaceBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack workspace bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        workspace_bindings: components["schemas"]["SlackWorkspaceBinding"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createSlackWorkspaceBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSlackWorkspaceBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description Slack workspace binding. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackWorkspaceBinding"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    authorizeSlackMessageAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizeSlackMessageActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Slack message authorization response with optional mission evaluation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackMessageAuthorizationResponse"];
                 };
             };
             default: components["responses"]["Error"];

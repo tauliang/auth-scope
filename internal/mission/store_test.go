@@ -37,6 +37,67 @@ func TestMemoryStoreProposalLifecycleAndErrors(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreIntegrationBindingsAreSortedAndConflictChecked(t *testing.T) {
+	store := NewMemoryStore()
+
+	oktaOne := OktaAppBinding{BindingID: "okta-1", Issuer: "https://a.example.com", ClientID: "z-client", MissionRef: "mref-1", Status: OktaAppBindingStatusActive}
+	oktaTwo := OktaAppBinding{BindingID: "okta-2", Issuer: "https://b.example.com", ClientID: "a-client", MissionRef: "mref-2", Status: OktaAppBindingStatusActive}
+	if err := store.SaveOktaAppBinding(oktaTwo); err != nil {
+		t.Fatalf("SaveOktaAppBinding second: %v", err)
+	}
+	if err := store.SaveOktaAppBinding(oktaOne); err != nil {
+		t.Fatalf("SaveOktaAppBinding first: %v", err)
+	}
+	oktaList, err := store.ListOktaAppBindings()
+	if err != nil {
+		t.Fatalf("ListOktaAppBindings: %v", err)
+	}
+	if oktaList[0].BindingID != "okta-1" || oktaList[1].BindingID != "okta-2" {
+		t.Fatalf("Okta bindings not sorted: %#v", oktaList)
+	}
+	if err := store.SaveOktaAppBinding(OktaAppBinding{BindingID: "okta-3", Issuer: oktaOne.Issuer, ClientID: oktaOne.ClientID, MissionRef: oktaOne.MissionRef, Status: OktaAppBindingStatusActive}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("SaveOktaAppBinding duplicate err = %v, want ErrConflict", err)
+	}
+
+	entraOne := EntraAppRegistration{RegistrationID: "entra-1", Issuer: "https://login.example.com/a", ClientID: "z-client", MissionRef: "mref-1", Status: EntraAppRegistrationStatusActive}
+	entraTwo := EntraAppRegistration{RegistrationID: "entra-2", Issuer: "https://login.example.com/b", ClientID: "a-client", MissionRef: "mref-2", Status: EntraAppRegistrationStatusActive}
+	if err := store.SaveEntraAppRegistration(entraTwo); err != nil {
+		t.Fatalf("SaveEntraAppRegistration second: %v", err)
+	}
+	if err := store.SaveEntraAppRegistration(entraOne); err != nil {
+		t.Fatalf("SaveEntraAppRegistration first: %v", err)
+	}
+	entraList, err := store.ListEntraAppRegistrations()
+	if err != nil {
+		t.Fatalf("ListEntraAppRegistrations: %v", err)
+	}
+	if entraList[0].RegistrationID != "entra-1" || entraList[1].RegistrationID != "entra-2" {
+		t.Fatalf("Entra registrations not sorted: %#v", entraList)
+	}
+	if err := store.UpdateEntraAppRegistration(EntraAppRegistration{RegistrationID: "missing"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateEntraAppRegistration missing err = %v, want ErrNotFound", err)
+	}
+
+	slackOne := SlackWorkspaceBinding{BindingID: "slack-1", TenantID: "demo", WorkspaceID: "T1", MissionRef: "mref-2", Status: SlackWorkspaceBindingStatusActive}
+	slackTwo := SlackWorkspaceBinding{BindingID: "slack-2", TenantID: "demo", WorkspaceID: "T2", MissionRef: "mref-1", Status: SlackWorkspaceBindingStatusActive}
+	if err := store.SaveSlackWorkspaceBinding(slackTwo); err != nil {
+		t.Fatalf("SaveSlackWorkspaceBinding second: %v", err)
+	}
+	if err := store.SaveSlackWorkspaceBinding(slackOne); err != nil {
+		t.Fatalf("SaveSlackWorkspaceBinding first: %v", err)
+	}
+	slackList, err := store.ListSlackWorkspaceBindings()
+	if err != nil {
+		t.Fatalf("ListSlackWorkspaceBindings: %v", err)
+	}
+	if slackList[0].BindingID != "slack-1" || slackList[1].BindingID != "slack-2" {
+		t.Fatalf("Slack bindings not sorted: %#v", slackList)
+	}
+	if err := store.SaveSlackWorkspaceBinding(SlackWorkspaceBinding{BindingID: "slack-3", TenantID: slackOne.TenantID, WorkspaceID: slackOne.WorkspaceID, MissionRef: slackOne.MissionRef, Status: SlackWorkspaceBindingStatusActive}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("SaveSlackWorkspaceBinding duplicate err = %v, want ErrConflict", err)
+	}
+}
+
 func TestMemoryStoreExpansionDecisionIsAtomicAndVersioned(t *testing.T) {
 	store := NewMemoryStore()
 	mission := Mission{MissionID: "mission-1", MissionRef: "mref-1", Version: 1, State: StateActive}

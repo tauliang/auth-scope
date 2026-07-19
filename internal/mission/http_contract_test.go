@@ -59,6 +59,13 @@ func TestOpenAPIDocumentsHTTPRouteInventory(t *testing.T) {
 		"/v1/containment-rules/{rule_id}",
 		"/v1/containment-rules/{rule_id}/lift",
 		"/v1/containment-rules/{rule_id}/blast-radius",
+		"/v1/integrations/github/repositories",
+		"/v1/integrations/github/webhooks",
+		"/v1/integrations/github/check-runs/plan",
+		"/v1/integrations/okta/app-bindings",
+		"/v1/integrations/okta/authority-context/resolve",
+		"/v1/integrations/slack/workspace-bindings",
+		"/v1/integrations/slack/message-actions/authorize",
 		"/v1/events",
 		"/v1/events/stream",
 	}

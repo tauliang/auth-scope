@@ -1717,6 +1717,374 @@ func (s *PostgresStore) GetGitHubWebhookDelivery(id string) (mission.GitHubWebho
 	return delivery, nil
 }
 
+// SaveOktaAppBinding saves an Okta application and group mission binding.
+func (s *PostgresStore) SaveOktaAppBinding(binding mission.OktaAppBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal okta app binding: %w", err)
+	}
+	createdAt := binding.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SaveOktaAppBinding", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO okta_app_bindings (
+			id, tenant_id, issuer, client_id, mission_ref, status, binding_json, created_at, last_resolved_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, binding.BindingID, nullableString(binding.TenantID), binding.Issuer, binding.ClientID, binding.MissionRef, binding.Status, bindingJSON, createdAt, nullableTime(binding.LastResolvedAt))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert okta app binding: %w", err)
+	}
+	return nil
+}
+
+// GetOktaAppBinding retrieves an Okta application and group mission binding.
+func (s *PostgresStore) GetOktaAppBinding(id string) (mission.OktaAppBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetOktaAppBinding", startTime)
+
+	var bindingJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT binding_json FROM okta_app_bindings WHERE id = $1`, id).Scan(&bindingJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.OktaAppBinding{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.OktaAppBinding{}, fmt.Errorf("query okta app binding: %w", err)
+	}
+	var binding mission.OktaAppBinding
+	if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+		return mission.OktaAppBinding{}, fmt.Errorf("unmarshal okta app binding: %w", err)
+	}
+	return binding, nil
+}
+
+// UpdateOktaAppBinding updates an Okta application and group mission binding.
+func (s *PostgresStore) UpdateOktaAppBinding(binding mission.OktaAppBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal okta app binding: %w", err)
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("UpdateOktaAppBinding", startTime)
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE okta_app_bindings SET
+			tenant_id = $1,
+			issuer = $2,
+			client_id = $3,
+			mission_ref = $4,
+			status = $5,
+			binding_json = $6,
+			last_resolved_at = $7
+		WHERE id = $8
+	`, nullableString(binding.TenantID), binding.Issuer, binding.ClientID, binding.MissionRef, binding.Status, bindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("update okta app binding: %w", err)
+	}
+	return rowsAffectedErr(result)
+}
+
+// ListOktaAppBindings lists Okta application and group mission bindings.
+func (s *PostgresStore) ListOktaAppBindings() ([]mission.OktaAppBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListOktaAppBindings", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT binding_json
+		FROM okta_app_bindings
+		ORDER BY issuer ASC, client_id ASC, created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query okta app bindings: %w", err)
+	}
+	defer rows.Close()
+
+	bindings := make([]mission.OktaAppBinding, 0)
+	for rows.Next() {
+		var bindingJSON []byte
+		if err := rows.Scan(&bindingJSON); err != nil {
+			return nil, fmt.Errorf("scan okta app binding: %w", err)
+		}
+		var binding mission.OktaAppBinding
+		if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+			return nil, fmt.Errorf("unmarshal okta app binding: %w", err)
+		}
+		bindings = append(bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate okta app bindings: %w", err)
+	}
+	return bindings, nil
+}
+
+// SaveEntraAppRegistration saves an Entra application registration mission binding.
+func (s *PostgresStore) SaveEntraAppRegistration(registration mission.EntraAppRegistration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	registrationJSON, err := json.Marshal(registration)
+	if err != nil {
+		return fmt.Errorf("marshal entra app registration: %w", err)
+	}
+	createdAt := registration.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SaveEntraAppRegistration", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO entra_app_registrations (
+			id, tenant_id, issuer, client_id, mission_ref, status, registration_json, created_at, last_resolved_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, registration.RegistrationID, nullableString(registration.TenantID), registration.Issuer, registration.ClientID, registration.MissionRef, registration.Status, registrationJSON, createdAt, nullableTime(registration.LastResolvedAt))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert entra app registration: %w", err)
+	}
+	return nil
+}
+
+// GetEntraAppRegistration retrieves an Entra application registration mission binding.
+func (s *PostgresStore) GetEntraAppRegistration(id string) (mission.EntraAppRegistration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetEntraAppRegistration", startTime)
+
+	var registrationJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT registration_json FROM entra_app_registrations WHERE id = $1`, id).Scan(&registrationJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.EntraAppRegistration{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.EntraAppRegistration{}, fmt.Errorf("query entra app registration: %w", err)
+	}
+	var registration mission.EntraAppRegistration
+	if err := json.Unmarshal(registrationJSON, &registration); err != nil {
+		return mission.EntraAppRegistration{}, fmt.Errorf("unmarshal entra app registration: %w", err)
+	}
+	return registration, nil
+}
+
+// UpdateEntraAppRegistration updates an Entra application registration mission binding.
+func (s *PostgresStore) UpdateEntraAppRegistration(registration mission.EntraAppRegistration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	registrationJSON, err := json.Marshal(registration)
+	if err != nil {
+		return fmt.Errorf("marshal entra app registration: %w", err)
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("UpdateEntraAppRegistration", startTime)
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE entra_app_registrations SET
+			tenant_id = $1,
+			issuer = $2,
+			client_id = $3,
+			mission_ref = $4,
+			status = $5,
+			registration_json = $6,
+			last_resolved_at = $7
+		WHERE id = $8
+	`, nullableString(registration.TenantID), registration.Issuer, registration.ClientID, registration.MissionRef, registration.Status, registrationJSON, nullableTime(registration.LastResolvedAt), registration.RegistrationID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("update entra app registration: %w", err)
+	}
+	return rowsAffectedErr(result)
+}
+
+// ListEntraAppRegistrations lists Entra application registration mission bindings.
+func (s *PostgresStore) ListEntraAppRegistrations() ([]mission.EntraAppRegistration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListEntraAppRegistrations", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT registration_json
+		FROM entra_app_registrations
+		ORDER BY issuer ASC, client_id ASC, created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query entra app registrations: %w", err)
+	}
+	defer rows.Close()
+
+	registrations := make([]mission.EntraAppRegistration, 0)
+	for rows.Next() {
+		var registrationJSON []byte
+		if err := rows.Scan(&registrationJSON); err != nil {
+			return nil, fmt.Errorf("scan entra app registration: %w", err)
+		}
+		var registration mission.EntraAppRegistration
+		if err := json.Unmarshal(registrationJSON, &registration); err != nil {
+			return nil, fmt.Errorf("unmarshal entra app registration: %w", err)
+		}
+		registrations = append(registrations, registration)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate entra app registrations: %w", err)
+	}
+	return registrations, nil
+}
+
+// SaveSlackWorkspaceBinding saves a Slack workspace mission binding.
+func (s *PostgresStore) SaveSlackWorkspaceBinding(binding mission.SlackWorkspaceBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal slack workspace binding: %w", err)
+	}
+	createdAt := binding.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SaveSlackWorkspaceBinding", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO slack_workspace_bindings (
+			id, tenant_id, workspace_id, mission_ref, status, binding_json, created_at, last_resolved_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, binding.BindingID, nullableString(binding.TenantID), binding.WorkspaceID, binding.MissionRef, binding.Status, bindingJSON, createdAt, nullableTime(binding.LastResolvedAt))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert slack workspace binding: %w", err)
+	}
+	return nil
+}
+
+// GetSlackWorkspaceBinding retrieves a Slack workspace mission binding.
+func (s *PostgresStore) GetSlackWorkspaceBinding(id string) (mission.SlackWorkspaceBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetSlackWorkspaceBinding", startTime)
+
+	var bindingJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT binding_json FROM slack_workspace_bindings WHERE id = $1`, id).Scan(&bindingJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.SlackWorkspaceBinding{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.SlackWorkspaceBinding{}, fmt.Errorf("query slack workspace binding: %w", err)
+	}
+	var binding mission.SlackWorkspaceBinding
+	if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+		return mission.SlackWorkspaceBinding{}, fmt.Errorf("unmarshal slack workspace binding: %w", err)
+	}
+	return binding, nil
+}
+
+// UpdateSlackWorkspaceBinding updates a Slack workspace mission binding.
+func (s *PostgresStore) UpdateSlackWorkspaceBinding(binding mission.SlackWorkspaceBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal slack workspace binding: %w", err)
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("UpdateSlackWorkspaceBinding", startTime)
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE slack_workspace_bindings SET
+			tenant_id = $1,
+			workspace_id = $2,
+			mission_ref = $3,
+			status = $4,
+			binding_json = $5,
+			last_resolved_at = $6
+			WHERE id = $7
+	`, nullableString(binding.TenantID), binding.WorkspaceID, binding.MissionRef, binding.Status, bindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("update slack workspace binding: %w", err)
+	}
+	return rowsAffectedErr(result)
+}
+
+// ListSlackWorkspaceBindings lists Slack workspace mission bindings.
+func (s *PostgresStore) ListSlackWorkspaceBindings() ([]mission.SlackWorkspaceBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListSlackWorkspaceBindings", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT binding_json
+		FROM slack_workspace_bindings
+		ORDER BY workspace_id ASC, mission_ref ASC, created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query slack workspace bindings: %w", err)
+	}
+	defer rows.Close()
+
+	bindings := make([]mission.SlackWorkspaceBinding, 0)
+	for rows.Next() {
+		var bindingJSON []byte
+		if err := rows.Scan(&bindingJSON); err != nil {
+			return nil, fmt.Errorf("scan slack workspace binding: %w", err)
+		}
+		var binding mission.SlackWorkspaceBinding
+		if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+			return nil, fmt.Errorf("unmarshal slack workspace binding: %w", err)
+		}
+		bindings = append(bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate slack workspace bindings: %w", err)
+	}
+	return bindings, nil
+}
+
 // AppendEvent appends an event and stages it in the outbox in one transaction.
 func (s *PostgresStore) AppendEvent(event mission.Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

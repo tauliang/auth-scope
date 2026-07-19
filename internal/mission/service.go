@@ -32,6 +32,9 @@ type Service struct {
 	proposalApprovals   ProposalApprovalStore
 	events              EventStore
 	github              GitHubStore
+	okta                OktaStore
+	entra               EntraStore
+	slack               SlackStore
 	clock               Clock
 	artifactKey         []byte
 	githubWebhookSecret []byte
@@ -51,6 +54,9 @@ type ServiceDependencies struct {
 	ProposalApprovals   ProposalApprovalStore
 	Events              EventStore
 	GitHub              GitHubStore
+	Okta                OktaStore
+	Entra               EntraStore
+	Slack               SlackStore
 	GovernanceReads     GovernanceReadStore
 	AuthorityGuard      AuthorityGuard
 	ArtifactKey         []byte
@@ -79,6 +85,9 @@ func NewServiceWithArtifactKey(store Store, clock Clock, artifactKey []byte) *Se
 		ProposalApprovals:  store,
 		Events:             store,
 		GitHub:             store,
+		Okta:               store,
+		Entra:              store,
+		Slack:              store,
 		GovernanceReads:    store,
 		ArtifactKey:        artifactKey,
 	}, clock)
@@ -117,6 +126,9 @@ func NewServiceWithDependencies(dependencies ServiceDependencies, clock Clock) *
 		proposalApprovals:   dependencies.ProposalApprovals,
 		events:              dependencies.Events,
 		github:              dependencies.GitHub,
+		okta:                dependencies.Okta,
+		entra:               dependencies.Entra,
+		slack:               dependencies.Slack,
 		clock:               clock,
 		artifactKey:         dependencies.ArtifactKey,
 		githubWebhookSecret: dependencies.GitHubWebhookSecret,

@@ -592,6 +592,144 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/GitHubCheckRunPlanResponse" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/okta/app-bindings:
+    post:
+      operationId: createOktaAppBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOktaAppBindingRequest" }
+      responses:
+        "201":
+          description: Okta application binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OktaAppBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listOktaAppBindings
+      responses:
+        "200":
+          description: Okta application bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_bindings:
+                    type: array
+                    items: { $ref: "#/components/schemas/OktaAppBinding" }
+                required: [app_bindings]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/okta/authority-context/resolve:
+    post:
+      operationId: resolveOktaAuthorityContext
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveOktaAuthorityContextRequest" }
+      responses:
+        "200":
+          description: Canonical mission authority context resolved from verified Okta claims.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OktaAuthorityContextResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/entra/app-registrations:
+    post:
+      operationId: createEntraAppRegistration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEntraAppRegistrationRequest" }
+      responses:
+        "201":
+          description: Entra application registration binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntraAppRegistration" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listEntraAppRegistrations
+      responses:
+        "200":
+          description: Entra application registration bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_registrations:
+                    type: array
+                    items: { $ref: "#/components/schemas/EntraAppRegistration" }
+                required: [app_registrations]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/entra/authority-context/resolve:
+    post:
+      operationId: resolveEntraAuthorityContext
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveEntraAuthorityContextRequest" }
+      responses:
+        "200":
+          description: Canonical mission authority context resolved from verified Entra claims.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntraAuthorityContextResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/slack/workspace-bindings:
+    post:
+      operationId: createSlackWorkspaceBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSlackWorkspaceBindingRequest" }
+      responses:
+        "201":
+          description: Slack workspace binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackWorkspaceBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listSlackWorkspaceBindings
+      responses:
+        "200":
+          description: Slack workspace bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace_bindings:
+                    type: array
+                    items: { $ref: "#/components/schemas/SlackWorkspaceBinding" }
+                required: [workspace_bindings]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/slack/message-actions/authorize:
+    post:
+      operationId: authorizeSlackMessageAction
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorizeSlackMessageActionRequest" }
+      responses:
+        "200":
+          description: Slack message authorization response with optional mission evaluation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackMessageAuthorizationResponse" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/events:
     get:
       operationId: listEvents
@@ -996,6 +1134,323 @@ components:
           type: array
           items: { type: object, additionalProperties: true }
       required: [name, external_id, repository, head_sha, status, conclusion, title, summary, mission_ref, evaluations]
+    CreateOktaAppBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        issuer: { type: string, description: "Okta issuer, for example https://example.okta.com/oauth2/default." }
+        authorization_server_id: { type: string }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_label: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        scope_claim: { type: string }
+        group_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [issuer, client_id, mission_ref]
+    OktaAppBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        issuer: { type: string }
+        authorization_server_id: { type: string }
+        discovery_url: { type: string }
+        jwks_uri: { type: string }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_label: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        scope_claim: { type: string }
+        group_match_mode: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_subject: { type: string }
+        last_resolution_status: { type: string }
+      required: [binding_id, issuer, client_id, mission_ref, status, created_at]
+    OktaEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action:
+          type: object
+          additionalProperties: true
+          properties:
+            type: { type: string }
+            name: { type: string }
+            resource:
+              type: object
+              properties:
+                type: { type: string }
+                id: { type: string }
+              required: [type, id]
+            operation: { type: string }
+      required: [actor, action]
+    ResolveOktaAuthorityContextRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        scopes: { type: array, items: { type: string } }
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/OktaEvaluationRequest" }
+    OktaAuthorityContextResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        scopes: { type: array, items: { type: string } }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, admin]
+    CreateEntraAppRegistrationRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        tenant_name: { type: string }
+        issuer: { type: string, description: "Microsoft Entra issuer, for example https://login.microsoftonline.com/{tenant}/v2.0." }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_name: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        roles_claim: { type: string }
+        group_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [issuer, client_id, mission_ref]
+    EntraAppRegistration:
+      type: object
+      additionalProperties: true
+      properties:
+        registration_id: { type: string }
+        tenant_id: { type: string }
+        tenant_name: { type: string }
+        issuer: { type: string }
+        discovery_url: { type: string }
+        jwks_uri: { type: string }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_name: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        roles_claim: { type: string }
+        group_match_mode: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_subject: { type: string }
+        last_resolution_status: { type: string }
+      required: [registration_id, issuer, client_id, mission_ref, status, created_at]
+    EntraEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action:
+          type: object
+          additionalProperties: true
+          properties:
+            type: { type: string }
+            name: { type: string }
+            resource:
+              type: object
+              properties:
+                type: { type: string }
+                id: { type: string }
+              required: [type, id]
+            operation: { type: string }
+      required: [actor, action]
+    ResolveEntraAuthorityContextRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        roles: { type: array, items: { type: string } }
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/EntraEvaluationRequest" }
+    EntraAuthorityContextResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        registration_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        roles: { type: array, items: { type: string } }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, admin]
+    SlackPrincipal:
+      type: object
+      properties:
+        user_id: { type: string }
+        email: { type: string }
+    CreateSlackWorkspaceBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        workspace_id: { type: string }
+        workspace_name: { type: string }
+        workspace_url: { type: string }
+        mission_ref: { type: string }
+        required_roles: { type: array, items: { type: string } }
+        admin_roles: { type: array, items: { type: string } }
+        allowed_channels: { type: array, items: { type: string } }
+        blocked_channels: { type: array, items: { type: string } }
+        allowed_users: { type: array, items: { type: string } }
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum: [post_message, edit_message, delete_message, react_message, start_thread]
+        role_claim: { type: string }
+        role_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [workspace_id, mission_ref]
+    SlackWorkspaceBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        workspace_id: { type: string }
+        workspace_name: { type: string }
+        workspace_url: { type: string }
+        mission_ref: { type: string }
+        required_roles: { type: array, items: { type: string } }
+        admin_roles: { type: array, items: { type: string } }
+        allowed_channels: { type: array, items: { type: string } }
+        blocked_channels: { type: array, items: { type: string } }
+        allowed_users: { type: array, items: { type: string } }
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum: [post_message, edit_message, delete_message, react_message, start_thread]
+        role_claim: { type: string }
+        role_match_mode: { type: string }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: { type: string } }
+        created_by: { $ref: "#/components/schemas/SlackPrincipal" }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_user_id: { type: string }
+        last_resolution_status: { type: string }
+      required: [binding_id, workspace_id, mission_ref, status, created_at]
+    SlackActionResource:
+      type: object
+      properties:
+        type: { type: string }
+        id: { type: string }
+        channel_id: { type: string }
+      required: [type, id]
+    SlackMessageAction:
+      type: object
+      additionalProperties: true
+      properties:
+        type: { type: string }
+        name: { type: string }
+        resource: { $ref: "#/components/schemas/SlackActionResource" }
+        operation: { type: string }
+      required: [type, resource, operation]
+    SlackEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action: { $ref: "#/components/schemas/SlackMessageAction" }
+      required: [actor, action]
+    AuthorizeSlackMessageActionRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        workspace_id: { type: string }
+        user_id: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        channel_id: { type: string }
+        action:
+          type: string
+          enum: [post_message, edit_message, delete_message, react_message, start_thread]
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/SlackEvaluationRequest" }
+      required: [workspace_id, action]
+    SlackMessageAuthorizationResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        workspace_id: { type: string }
+        user_id: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        channel_id: { type: string }
+        action: { type: string }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, admin]
     AdminSession:
       type: object
       properties:

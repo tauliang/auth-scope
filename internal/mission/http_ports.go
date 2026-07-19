@@ -83,6 +83,24 @@ type GitHubAPI interface {
 	PlanGitHubCheckRun(GitHubCheckRunPlanRequest) (GitHubCheckRunPlanResponse, error)
 }
 
+type OktaAPI interface {
+	CreateOktaAppBinding(CreateOktaAppBindingRequest, Principal) (OktaAppBinding, error)
+	ListOktaAppBindings() ([]OktaAppBinding, error)
+	ResolveOktaAuthorityContext(ResolveOktaAuthorityContextRequest) (OktaAuthorityContextResponse, error)
+}
+
+type EntraAPI interface {
+	CreateEntraAppRegistration(CreateEntraAppRegistrationRequest, Principal) (EntraAppRegistration, error)
+	ListEntraAppRegistrations() ([]EntraAppRegistration, error)
+	ResolveEntraAuthorityContext(ResolveEntraAuthorityContextRequest) (EntraAuthorityContextResponse, error)
+}
+
+type SlackAPI interface {
+	CreateSlackWorkspaceBinding(CreateSlackWorkspaceBindingRequest, Principal) (SlackWorkspaceBinding, error)
+	ListSlackWorkspaceBindings() ([]SlackWorkspaceBinding, error)
+	AuthorizeSlackMessageAction(AuthorizeSlackMessageActionRequest) (SlackMessageAuthorizationResponse, error)
+}
+
 type HandlerServices struct {
 	Identity        IdentityAPI
 	Mission         MissionAPI
@@ -92,4 +110,7 @@ type HandlerServices struct {
 	AuthZEN         AuthZENAPI
 	Operator        OperatorAPI
 	GitHub          GitHubAPI
+	Okta            OktaAPI
+	Entra           EntraAPI
+	Slack           SlackAPI
 }

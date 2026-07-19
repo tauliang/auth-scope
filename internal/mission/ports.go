@@ -73,6 +73,27 @@ type GitHubStore interface {
 	GetGitHubWebhookDelivery(string) (GitHubWebhookDelivery, error)
 }
 
+type OktaStore interface {
+	SaveOktaAppBinding(OktaAppBinding) error
+	GetOktaAppBinding(string) (OktaAppBinding, error)
+	UpdateOktaAppBinding(OktaAppBinding) error
+	ListOktaAppBindings() ([]OktaAppBinding, error)
+}
+
+type EntraStore interface {
+	SaveEntraAppRegistration(EntraAppRegistration) error
+	GetEntraAppRegistration(string) (EntraAppRegistration, error)
+	UpdateEntraAppRegistration(EntraAppRegistration) error
+	ListEntraAppRegistrations() ([]EntraAppRegistration, error)
+}
+
+type SlackStore interface {
+	SaveSlackWorkspaceBinding(SlackWorkspaceBinding) error
+	GetSlackWorkspaceBinding(string) (SlackWorkspaceBinding, error)
+	UpdateSlackWorkspaceBinding(SlackWorkspaceBinding) error
+	ListSlackWorkspaceBindings() ([]SlackWorkspaceBinding, error)
+}
+
 type ExpansionDecisionStore interface {
 	CommitExpansionDecision(context.Context, ExpansionDecisionCommit) error
 }

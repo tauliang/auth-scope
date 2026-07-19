@@ -49,6 +49,10 @@ The repository includes a two-minute captioned recording of the primary demo flo
 - `demo/videos/auth-scope-mission-authority-demo-2min-captioned.webm` (`121.08s`)
 - `demo/videos/auth-scope-mission-authority-demo-2min-captions.md`
 
+## Manual Stakeholder Demo
+
+Use `demo/MANUAL_DEMO_SCRIPT.md` when a presenter wants to drive the stakeholder demo by hand. It includes setup commands, seed instructions, generated values to copy, exact UI fields, a talk track, expected outcomes, and troubleshooting notes.
+
 ## Useful Options
 
 ```bash

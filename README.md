@@ -95,6 +95,10 @@ The React console is an operational surface for people responsible for AI-agent 
 
 The console keeps administrator bearer credentials in React memory only. Refreshing the browser clears the credential and returns the operator to the connection screen. Empty states, retry actions, not-found routes, and detail-load failures should always provide a path back to the relevant inventory or queue.
 
+## Samples
+
+The [`samples`](samples) directory contains small companion apps that demonstrate how Auth Scope can govern real agent workflows. Start with [`samples/governed-coding-agent-workbench`](samples/governed-coding-agent-workbench), a static sample that models a Codex/OpenCode-style coding agent asking for mission authority before file edits, tests, dependency changes, pull requests, and deployment.
+
 ## Test
 
 ```sh

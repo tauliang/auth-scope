@@ -660,6 +660,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/integrations/okta/app-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listOktaAppBindings"];
+        put?: never;
+        post: operations["createOktaAppBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/okta/authority-context/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolveOktaAuthorityContext"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -984,6 +1016,112 @@ export interface components {
             evaluations: {
                 [key: string]: unknown;
             }[];
+        } & {
+            [key: string]: unknown;
+        };
+        CreateOktaAppBindingRequest: {
+            tenant_id?: string;
+            /** @description Okta issuer, for example https://example.okta.com/oauth2/default. */
+            issuer: string;
+            authorization_server_id?: string;
+            client_id: string;
+            app_id?: string;
+            app_label?: string;
+            mission_ref: string;
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            scope_claim?: string;
+            /** @enum {string} */
+            group_match_mode?: "any" | "all";
+            metadata?: {
+                [key: string]: string;
+            };
+        };
+        OktaAppBinding: {
+            binding_id: string;
+            tenant_id?: string;
+            issuer: string;
+            authorization_server_id?: string;
+            discovery_url?: string;
+            jwks_uri?: string;
+            client_id: string;
+            app_id?: string;
+            app_label?: string;
+            mission_ref: string;
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            scope_claim?: string;
+            group_match_mode?: string;
+            status: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_resolved_at?: string;
+            last_subject?: string;
+            last_resolution_status?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        OktaEvaluationRequest: {
+            mission_version_seen?: number;
+            actor: {
+                [key: string]: unknown;
+            };
+            action: {
+                type?: string;
+                name?: string;
+                resource?: {
+                    type: string;
+                    id: string;
+                };
+                operation?: string;
+            } & {
+                [key: string]: unknown;
+            };
+        };
+        ResolveOktaAuthorityContextRequest: {
+            tenant_id?: string;
+            mission_ref?: string;
+            issuer?: string;
+            client_id?: string;
+            subject?: string;
+            groups?: string[];
+            scopes?: string[];
+            claims?: {
+                [key: string]: unknown;
+            };
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: components["schemas"]["OktaEvaluationRequest"];
+        };
+        OktaAuthorityContextResponse: {
+            accepted: boolean;
+            status: string;
+            binding_id?: string;
+            tenant_id?: string;
+            mission_ref?: string;
+            issuer?: string;
+            client_id?: string;
+            subject?: string;
+            groups?: string[];
+            scopes?: string[];
+            admin: boolean;
+            reason_codes?: string[];
+            human_reason?: string;
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: {
+                [key: string]: unknown;
+            };
+            resolved_at?: string;
         } & {
             [key: string]: unknown;
         };
@@ -2126,6 +2264,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GitHubCheckRunPlanResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listOktaAppBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Okta application bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        app_bindings: components["schemas"]["OktaAppBinding"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createOktaAppBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOktaAppBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description Okta application binding. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OktaAppBinding"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    resolveOktaAuthorityContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveOktaAuthorityContextRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical mission authority context resolved from verified Okta claims. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OktaAuthorityContextResponse"];
                 };
             };
             default: components["responses"]["Error"];

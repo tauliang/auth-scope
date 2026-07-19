@@ -592,6 +592,52 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/GitHubCheckRunPlanResponse" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/okta/app-bindings:
+    post:
+      operationId: createOktaAppBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOktaAppBindingRequest" }
+      responses:
+        "201":
+          description: Okta application binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OktaAppBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listOktaAppBindings
+      responses:
+        "200":
+          description: Okta application bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_bindings:
+                    type: array
+                    items: { $ref: "#/components/schemas/OktaAppBinding" }
+                required: [app_bindings]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/okta/authority-context/resolve:
+    post:
+      operationId: resolveOktaAuthorityContext
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveOktaAuthorityContextRequest" }
+      responses:
+        "200":
+          description: Canonical mission authority context resolved from verified Okta claims.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OktaAuthorityContextResponse" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/events:
     get:
       operationId: listEvents
@@ -996,6 +1042,105 @@ components:
           type: array
           items: { type: object, additionalProperties: true }
       required: [name, external_id, repository, head_sha, status, conclusion, title, summary, mission_ref, evaluations]
+    CreateOktaAppBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        issuer: { type: string, description: "Okta issuer, for example https://example.okta.com/oauth2/default." }
+        authorization_server_id: { type: string }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_label: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        scope_claim: { type: string }
+        group_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [issuer, client_id, mission_ref]
+    OktaAppBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        issuer: { type: string }
+        authorization_server_id: { type: string }
+        discovery_url: { type: string }
+        jwks_uri: { type: string }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_label: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        scope_claim: { type: string }
+        group_match_mode: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_subject: { type: string }
+        last_resolution_status: { type: string }
+      required: [binding_id, issuer, client_id, mission_ref, status, created_at]
+    OktaEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action:
+          type: object
+          additionalProperties: true
+          properties:
+            type: { type: string }
+            name: { type: string }
+            resource:
+              type: object
+              properties:
+                type: { type: string }
+                id: { type: string }
+              required: [type, id]
+            operation: { type: string }
+      required: [actor, action]
+    ResolveOktaAuthorityContextRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        scopes: { type: array, items: { type: string } }
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/OktaEvaluationRequest" }
+    OktaAuthorityContextResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        scopes: { type: array, items: { type: string } }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, admin]
     AdminSession:
       type: object
       properties:

@@ -83,6 +83,12 @@ type GitHubAPI interface {
 	PlanGitHubCheckRun(GitHubCheckRunPlanRequest) (GitHubCheckRunPlanResponse, error)
 }
 
+type OktaAPI interface {
+	CreateOktaAppBinding(CreateOktaAppBindingRequest, Principal) (OktaAppBinding, error)
+	ListOktaAppBindings() ([]OktaAppBinding, error)
+	ResolveOktaAuthorityContext(ResolveOktaAuthorityContextRequest) (OktaAuthorityContextResponse, error)
+}
+
 type HandlerServices struct {
 	Identity        IdentityAPI
 	Mission         MissionAPI
@@ -92,4 +98,5 @@ type HandlerServices struct {
 	AuthZEN         AuthZENAPI
 	Operator        OperatorAPI
 	GitHub          GitHubAPI
+	Okta            OktaAPI
 }

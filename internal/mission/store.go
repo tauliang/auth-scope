@@ -39,6 +39,7 @@ type Store interface {
 	NegotiationStore
 	ContainmentStore
 	GitHubStore
+	OktaStore
 	ExpansionDecisionStore
 	ProposalApprovalStore
 	EventStore
@@ -63,6 +64,7 @@ type MemoryStore struct {
 	containments     map[string]ContainmentRule
 	githubBindings   map[string]GitHubRepositoryBinding
 	githubDeliveries map[string]GitHubWebhookDelivery
+	oktaBindings     map[string]OktaAppBinding
 	events           []Event
 }
 
@@ -83,6 +85,7 @@ func NewMemoryStore() *MemoryStore {
 		containments:     make(map[string]ContainmentRule),
 		githubBindings:   make(map[string]GitHubRepositoryBinding),
 		githubDeliveries: make(map[string]GitHubWebhookDelivery),
+		oktaBindings:     make(map[string]OktaAppBinding),
 	}
 }
 
@@ -727,6 +730,75 @@ func (s *MemoryStore) GetGitHubWebhookDelivery(id string) (GitHubWebhookDelivery
 		return GitHubWebhookDelivery{}, ErrNotFound
 	}
 	return delivery, nil
+}
+
+func (s *MemoryStore) SaveOktaAppBinding(binding OktaAppBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.oktaBindings[binding.BindingID]; ok {
+		return ErrConflict
+	}
+	for _, existing := range s.oktaBindings {
+		if existing.Status == OktaAppBindingStatusActive &&
+			existing.Issuer == binding.Issuer &&
+			existing.ClientID == binding.ClientID &&
+			existing.MissionRef == binding.MissionRef {
+			return ErrConflict
+		}
+	}
+	s.oktaBindings[binding.BindingID] = binding
+	return nil
+}
+
+func (s *MemoryStore) GetOktaAppBinding(id string) (OktaAppBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	binding, ok := s.oktaBindings[id]
+	if !ok {
+		return OktaAppBinding{}, ErrNotFound
+	}
+	return binding, nil
+}
+
+func (s *MemoryStore) UpdateOktaAppBinding(binding OktaAppBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.oktaBindings[binding.BindingID]; !ok {
+		return ErrNotFound
+	}
+	s.oktaBindings[binding.BindingID] = binding
+	return nil
+}
+
+func (s *MemoryStore) ListOktaAppBindings() ([]OktaAppBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	bindings := make([]OktaAppBinding, 0, len(s.oktaBindings))
+	for _, binding := range s.oktaBindings {
+		bindings = append(bindings, binding)
+	}
+	slices.SortFunc(bindings, func(a, b OktaAppBinding) int {
+		if a.Issuer < b.Issuer {
+			return -1
+		}
+		if a.Issuer > b.Issuer {
+			return 1
+		}
+		if a.ClientID < b.ClientID {
+			return -1
+		}
+		if a.ClientID > b.ClientID {
+			return 1
+		}
+		if a.BindingID < b.BindingID {
+			return -1
+		}
+		if a.BindingID > b.BindingID {
+			return 1
+		}
+		return 0
+	})
+	return bindings, nil
 }
 
 func (s *MemoryStore) AppendEvent(event Event) error {

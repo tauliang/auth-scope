@@ -41,6 +41,7 @@ func NewHandlerWithOptions(service *Service, authenticator AdminAuthenticator, o
 		AuthZEN:         service,
 		Operator:        service,
 		GitHub:          service,
+		Okta:            service,
 	}, authenticator, options)
 }
 
@@ -109,6 +110,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("GET /v1/integrations/github/repositories", h.requireAdmin(http.HandlerFunc(h.listGitHubRepositoryBindings)))
 	mux.HandleFunc("POST /v1/integrations/github/webhooks", h.githubWebhook)
 	mux.HandleFunc("POST /v1/integrations/github/check-runs/plan", h.githubCheckRunPlan)
+	mux.Handle("POST /v1/integrations/okta/app-bindings", h.requireAdmin(http.HandlerFunc(h.createOktaAppBinding)))
+	mux.Handle("GET /v1/integrations/okta/app-bindings", h.requireAdmin(http.HandlerFunc(h.listOktaAppBindings)))
+	mux.HandleFunc("POST /v1/integrations/okta/authority-context/resolve", h.resolveOktaAuthorityContext)
 	mux.Handle("GET /v1/events", h.requireAdmin(http.HandlerFunc(h.events)))
 	mux.Handle("GET /v1/events/stream", h.requireAdmin(http.HandlerFunc(h.eventsStream)))
 	return requestID(mux)
@@ -183,6 +187,7 @@ func (h *Handler) discovery(w http.ResponseWriter, r *http.Request) {
 			"containment_rules":         true,
 			"lineage_graphs":            true,
 			"github_integration":        true,
+			"okta_integration":          true,
 			"mission_proposals":         true,
 			"delegation":                true,
 			"expansion_requests":        true,

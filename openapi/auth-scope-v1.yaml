@@ -1,0 +1,1487 @@
+openapi: 3.1.0
+info:
+  title: Auth Scope Operator API
+  version: 1.0.0
+  description: Read and decision endpoints consumed by the Auth Scope operator console.
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Service health.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: { type: string } }
+        default: { $ref: "#/components/responses/Error" }
+  /.well-known/mission-authority:
+    get:
+      operationId: getMissionAuthorityDiscovery
+      security: []
+      responses:
+        "200":
+          description: Mission authority discovery document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /.well-known/authzen-configuration:
+    get:
+      operationId: getAuthZENDiscovery
+      security: []
+      responses:
+        "200":
+          description: AuthZEN discovery document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /access/v1/evaluation:
+    post:
+      operationId: evaluateAuthZEN
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: AuthZEN single evaluation decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /access/v1/evaluations:
+    post:
+      operationId: evaluateAuthZENBatch
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: AuthZEN batch evaluation decisions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/admin/session:
+    get:
+      operationId: getAdminSession
+      responses:
+        "200":
+          description: Authenticated administrator context.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSession" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/operations/summary:
+    get:
+      operationId: getOperationsSummary
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+      responses:
+        "200":
+          description: Current operator dashboard counters.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsSummary" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions:
+    get:
+      operationId: listMissions
+      parameters: &listParameters
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Status"
+        - $ref: "#/components/parameters/State"
+        - $ref: "#/components/parameters/Type"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Mission page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/evaluate:
+    post:
+      operationId: evaluateMission
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Mission-scoped authorization decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/authority/negotiations:
+    post:
+      operationId: createAuthorityNegotiation
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Authority negotiation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/expansion-requests:
+    post:
+      operationId: createExpansionRequest
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Expansion request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpansionRequest" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/resume:
+    post:
+      operationId: resumeMission
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Mission resume decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/delegate:
+    post:
+      operationId: delegateMission
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Delegated child mission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/revoke:
+    post:
+      operationId: revokeMission
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Revoked mission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mission" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/complete:
+    post:
+      operationId: completeMission
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Completed mission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mission" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/introspect:
+    get:
+      operationId: introspectMission
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      responses:
+        "200":
+          description: Mission detail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mission" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/lineage:
+    get:
+      operationId: getMissionLineage
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      responses:
+        "200":
+          description: Mission lineage graph.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/projections:
+    post:
+      operationId: createProjection
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Signed external projection.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/leases:
+    post:
+      operationId: createMissionLease
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Mission lease decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/mission-proposals:
+    post:
+      operationId: createMissionProposal
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Created mission proposal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listMissionProposals
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Mission proposal page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProposalPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/mission-proposals/{proposal_id}:
+    get:
+      operationId: getMissionProposal
+      parameters:
+        - name: proposal_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Mission proposal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionProposal" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/mission-proposals/{proposal_id}/approve:
+    post:
+      operationId: approveMissionProposal
+      parameters:
+        - name: proposal_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Activated mission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests:
+    get:
+      operationId: listExpansionRequests
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Expansion request page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpansionPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests/{expansion_id}:
+    get:
+      operationId: getExpansionRequest
+      parameters:
+        - $ref: "#/components/parameters/ExpansionID"
+      responses:
+        "200":
+          description: Expansion request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpansionRequest" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests/{expansion_id}/approve:
+    post:
+      operationId: approveExpansionRequest
+      parameters:
+        - $ref: "#/components/parameters/ExpansionID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Expansion approval decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests/{expansion_id}/deny:
+    post:
+      operationId: denyExpansionRequest
+      parameters:
+        - $ref: "#/components/parameters/ExpansionID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Expansion denial decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests/{expansion_id}/approvals:
+    post:
+      operationId: submitExpansionApproval
+      parameters:
+        - $ref: "#/components/parameters/ExpansionID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Recorded expansion approval.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/agents:
+    post:
+      operationId: registerAgent
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Registered agent identity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listAgents
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Agent identity page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/agents/{agent_id}:
+    get:
+      operationId: getAgent
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      responses:
+        "200":
+          description: Agent identity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentIdentity" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/agents/{agent_id}/revoke:
+    post:
+      operationId: revokeAgent
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Revoked agent identity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentIdentity" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/agents/{agent_id}/lineage:
+    get:
+      operationId: getAgentLineage
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      responses:
+        "200":
+          description: Agent lineage graph.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/tool-contracts:
+    post:
+      operationId: registerToolContract
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Registered tool contract.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ToolContract" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listToolContracts
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Tool contract page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ToolContractPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/tool-contracts/{tool_name}:
+    get:
+      operationId: getToolContract
+      parameters:
+        - name: tool_name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Tool contract.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ToolContract" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/tool-calls/authorize:
+    post:
+      operationId: authorizeToolCall
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Tool-call authorization decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/projections:
+    get:
+      operationId: listProjections
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Projection page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectionPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/projections/{projection_id}/status:
+    get:
+      operationId: getProjectionStatus
+      parameters:
+        - $ref: "#/components/parameters/ProjectionID"
+      responses:
+        "200":
+          description: Projection status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/projections/{projection_id}/revoke:
+    post:
+      operationId: revokeProjection
+      parameters:
+        - $ref: "#/components/parameters/ProjectionID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Revoked projection status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/projections/verify:
+    post:
+      operationId: verifyProjection
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Projection verification result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/github/repositories:
+    post:
+      operationId: createGitHubRepositoryBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGitHubRepositoryBindingRequest" }
+      responses:
+        "201":
+          description: GitHub repository binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubRepositoryBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listGitHubRepositoryBindings
+      responses:
+        "200":
+          description: GitHub repository bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  repositories:
+                    type: array
+                    items: { $ref: "#/components/schemas/GitHubRepositoryBinding" }
+                required: [repositories]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/github/webhooks:
+    post:
+      operationId: ingestGitHubWebhook
+      security: []
+      parameters:
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-GitHub-Delivery
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "202":
+          description: Accepted GitHub webhook delivery.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubWebhookResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/github/check-runs/plan:
+    post:
+      operationId: planGitHubCheckRun
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GitHubCheckRunPlanRequest" }
+      responses:
+        "200":
+          description: GitHub check-run payload that an integration worker can publish.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubCheckRunPlanResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/okta/app-bindings:
+    post:
+      operationId: createOktaAppBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOktaAppBindingRequest" }
+      responses:
+        "201":
+          description: Okta application binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OktaAppBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listOktaAppBindings
+      responses:
+        "200":
+          description: Okta application bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_bindings:
+                    type: array
+                    items: { $ref: "#/components/schemas/OktaAppBinding" }
+                required: [app_bindings]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/okta/authority-context/resolve:
+    post:
+      operationId: resolveOktaAuthorityContext
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveOktaAuthorityContextRequest" }
+      responses:
+        "200":
+          description: Canonical mission authority context resolved from verified Okta claims.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OktaAuthorityContextResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/entra/app-registrations:
+    post:
+      operationId: createEntraAppRegistration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEntraAppRegistrationRequest" }
+      responses:
+        "201":
+          description: Entra application registration binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntraAppRegistration" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listEntraAppRegistrations
+      responses:
+        "200":
+          description: Entra application registration bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  app_registrations:
+                    type: array
+                    items: { $ref: "#/components/schemas/EntraAppRegistration" }
+                required: [app_registrations]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/entra/authority-context/resolve:
+    post:
+      operationId: resolveEntraAuthorityContext
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveEntraAuthorityContextRequest" }
+      responses:
+        "200":
+          description: Canonical mission authority context resolved from verified Entra claims.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntraAuthorityContextResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/slack/workspace-bindings:
+    post:
+      operationId: createSlackWorkspaceBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSlackWorkspaceBindingRequest" }
+      responses:
+        "201":
+          description: Slack workspace binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackWorkspaceBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listSlackWorkspaceBindings
+      responses:
+        "200":
+          description: Slack workspace bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace_bindings:
+                    type: array
+                    items: { $ref: "#/components/schemas/SlackWorkspaceBinding" }
+                required: [workspace_bindings]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/slack/message-actions/authorize:
+    post:
+      operationId: authorizeSlackMessageAction
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorizeSlackMessageActionRequest" }
+      responses:
+        "200":
+          description: Slack message authorization response with optional mission evaluation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackMessageAuthorizationResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/events:
+    get:
+      operationId: listEvents
+      parameters: *listParameters
+      responses:
+        "200":
+          description: Audit event page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/events/stream:
+    get:
+      operationId: streamEvents
+      responses:
+        "200":
+          description: Server-sent audit event stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/approval-rules:
+    post:
+      operationId: createApprovalRule
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Approval rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listApprovalRules
+      responses:
+        "200":
+          description: Approval rules.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/containment-rules:
+    post:
+      operationId: createContainmentRule
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Containment rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContainmentRule" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listContainmentRules
+      responses:
+        "200":
+          description: Containment rules.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/containment-rules/{rule_id}:
+    get:
+      operationId: getContainmentRule
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Containment rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContainmentRule" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/containment-rules/{rule_id}/lift:
+    post:
+      operationId: liftContainmentRule
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Lifted containment rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContainmentRule" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/containment-rules/{rule_id}/blast-radius:
+    get:
+      operationId: getContainmentBlastRadius
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Containment blast radius.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/authority/negotiations/{negotiation_id}:
+    get:
+      operationId: getAuthorityNegotiation
+      parameters:
+        - name: negotiation_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Authority negotiation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/decision-artifacts/verify:
+    post:
+      operationId: verifyDecisionArtifact
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Decision artifact verification result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/leases/{lease_id}/refresh:
+    post:
+      operationId: refreshMissionLease
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/LeaseID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Refreshed mission lease decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    agentID:
+      type: apiKey
+      in: header
+      name: x-auth-scope-agent-id
+    agentNonce:
+      type: apiKey
+      in: header
+      name: x-auth-scope-nonce
+    agentSignature:
+      type: apiKey
+      in: header
+      name: x-auth-scope-signature
+  requestBodies:
+    GenericJSON:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GenericObject" }
+  parameters:
+    AgentID:
+      name: agent_id
+      in: path
+      required: true
+      schema: { type: string }
+    ExpansionID:
+      name: expansion_id
+      in: path
+      required: true
+      schema: { type: string }
+    LeaseID:
+      name: lease_id
+      in: path
+      required: true
+      schema: { type: string }
+    MissionRef:
+      name: mission_ref
+      in: path
+      required: true
+      schema: { type: string }
+    ProjectionID:
+      name: projection_id
+      in: path
+      required: true
+      schema: { type: string }
+    Tenant:
+      name: tenant_id
+      in: query
+      schema: { type: string }
+    Query:
+      name: q
+      in: query
+      schema: { type: string }
+    Status:
+      name: status
+      in: query
+      schema: { type: string }
+    State:
+      name: state
+      in: query
+      schema: { type: string }
+    Type:
+      name: type
+      in: query
+      schema: { type: string }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200 }
+  responses:
+    Error:
+      description: Stable API error envelope.
+      headers:
+        X-Request-ID:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+  schemas:
+    GenericObject:
+      type: object
+      additionalProperties: true
+    ApiError:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }
+        message: { type: string }
+      required: [code, message]
+    Principal:
+      type: object
+      properties:
+        subject: { type: string }
+        issuer: { type: string }
+      required: [subject, issuer]
+    Agent:
+      type: object
+      properties:
+        provider: { type: string }
+        client_id: { type: string }
+        instance_id: { type: string }
+      required: [provider, client_id, instance_id]
+    ResourceGrant:
+      type: object
+      properties:
+        type: { type: string }
+        id: { type: string }
+        actions: { type: array, items: { type: string } }
+        constraints: { type: object, additionalProperties: true }
+      required: [type, id, actions]
+    AuthorityRegion:
+      type: object
+      properties:
+        resources: { type: array, items: { $ref: "#/components/schemas/ResourceGrant" } }
+        forbidden_actions: { type: array, items: { type: string } }
+      required: [resources]
+    Delegation:
+      type: object
+      additionalProperties: true
+    Lifecycle:
+      type: object
+      additionalProperties: true
+    Mission:
+      type: object
+      properties:
+        mission_id: { type: string }
+        mission_ref: { type: string }
+        tenant_id: { type: string }
+        state: { type: string }
+        version: { type: integer }
+        principal: { $ref: "#/components/schemas/Principal" }
+        agent: { $ref: "#/components/schemas/Agent" }
+        purpose: { type: object, additionalProperties: true }
+        authority_region: { $ref: "#/components/schemas/AuthorityRegion" }
+        conditions: { type: array, items: { type: object, additionalProperties: true } }
+        lifecycle: { $ref: "#/components/schemas/Lifecycle" }
+        delegation: { $ref: "#/components/schemas/Delegation" }
+      required: [mission_id, mission_ref, tenant_id, state, version, principal, agent, purpose, authority_region, lifecycle, delegation]
+    MissionProposal:
+      type: object
+      properties:
+        proposal_id: { type: string }
+        status: { type: string }
+        tenant_id: { type: string }
+        principal: { $ref: "#/components/schemas/Principal" }
+        agent: { $ref: "#/components/schemas/Agent" }
+        intent: { type: object, additionalProperties: true }
+        authority_region: { $ref: "#/components/schemas/AuthorityRegion" }
+        lifecycle: { $ref: "#/components/schemas/Lifecycle" }
+        delegation: { $ref: "#/components/schemas/Delegation" }
+        created_at: { type: string, format: date-time }
+      required: [proposal_id, status, tenant_id, principal, agent, intent, authority_region, lifecycle, delegation, created_at]
+    ExpansionRequest:
+      type: object
+      additionalProperties: true
+    AgentIdentity:
+      type: object
+      additionalProperties: true
+    ToolContract:
+      type: object
+      additionalProperties: true
+    Projection:
+      type: object
+      additionalProperties: true
+    EventRecord:
+      type: object
+      additionalProperties: true
+    ContainmentRule:
+      type: object
+      additionalProperties: true
+    CreateGitHubRepositoryBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        owner: { type: string }
+        repo: { type: string }
+        repository: { type: string, description: "Repository in owner/repo form." }
+        default_branch: { type: string }
+        installation_id: { type: integer, format: int64 }
+        mission_ref: { type: string }
+        branch_patterns: { type: array, items: { type: string } }
+        required_checks: { type: array, items: { type: string } }
+        metadata: { type: object, additionalProperties: { type: string } }
+    GitHubRepositoryBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        repository: { type: string }
+        mission_ref: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [binding_id, repository, status, created_at]
+    GitHubWebhookResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        event: { type: string }
+        delivery_id: { type: string }
+        repository: { type: string }
+        binding_id: { type: string }
+        mission_ref: { type: string }
+      required: [accepted, status, event, delivery_id]
+    GitHubChangedFile:
+      type: object
+      properties:
+        path: { type: string }
+        status: { type: string }
+        operation: { type: string }
+        additions: { type: integer }
+        deletions: { type: integer }
+      required: [path]
+    GitHubCheckRunPlanRequest:
+      type: object
+      properties:
+        mission_ref: { type: string }
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        repository: { type: string }
+        pull_request: { type: integer }
+        head_sha: { type: string }
+        branch: { type: string }
+        changed_files:
+          type: array
+          items: { $ref: "#/components/schemas/GitHubChangedFile" }
+        context: { type: object, additionalProperties: true }
+      required: [actor, repository, head_sha, changed_files]
+    GitHubCheckRunPlanResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        name: { type: string }
+        external_id: { type: string }
+        repository: { type: string }
+        head_sha: { type: string }
+        status: { type: string }
+        conclusion: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        mission_ref: { type: string }
+        mission_version: { type: integer }
+        evaluations:
+          type: array
+          items: { type: object, additionalProperties: true }
+      required: [name, external_id, repository, head_sha, status, conclusion, title, summary, mission_ref, evaluations]
+    CreateOktaAppBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        issuer: { type: string, description: "Okta issuer, for example https://example.okta.com/oauth2/default." }
+        authorization_server_id: { type: string }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_label: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        scope_claim: { type: string }
+        group_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [issuer, client_id, mission_ref]
+    OktaAppBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        issuer: { type: string }
+        authorization_server_id: { type: string }
+        discovery_url: { type: string }
+        jwks_uri: { type: string }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_label: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        scope_claim: { type: string }
+        group_match_mode: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_subject: { type: string }
+        last_resolution_status: { type: string }
+      required: [binding_id, issuer, client_id, mission_ref, status, created_at]
+    OktaEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action:
+          type: object
+          additionalProperties: true
+          properties:
+            type: { type: string }
+            name: { type: string }
+            resource:
+              type: object
+              properties:
+                type: { type: string }
+                id: { type: string }
+              required: [type, id]
+            operation: { type: string }
+      required: [actor, action]
+    ResolveOktaAuthorityContextRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        scopes: { type: array, items: { type: string } }
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/OktaEvaluationRequest" }
+    OktaAuthorityContextResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        scopes: { type: array, items: { type: string } }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, admin]
+    CreateEntraAppRegistrationRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        tenant_name: { type: string }
+        issuer: { type: string, description: "Microsoft Entra issuer, for example https://login.microsoftonline.com/{tenant}/v2.0." }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_name: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        roles_claim: { type: string }
+        group_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [issuer, client_id, mission_ref]
+    EntraAppRegistration:
+      type: object
+      additionalProperties: true
+      properties:
+        registration_id: { type: string }
+        tenant_id: { type: string }
+        tenant_name: { type: string }
+        issuer: { type: string }
+        discovery_url: { type: string }
+        jwks_uri: { type: string }
+        client_id: { type: string }
+        app_id: { type: string }
+        app_name: { type: string }
+        mission_ref: { type: string }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        roles_claim: { type: string }
+        group_match_mode: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_subject: { type: string }
+        last_resolution_status: { type: string }
+      required: [registration_id, issuer, client_id, mission_ref, status, created_at]
+    EntraEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action:
+          type: object
+          additionalProperties: true
+          properties:
+            type: { type: string }
+            name: { type: string }
+            resource:
+              type: object
+              properties:
+                type: { type: string }
+                id: { type: string }
+              required: [type, id]
+            operation: { type: string }
+      required: [actor, action]
+    ResolveEntraAuthorityContextRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        roles: { type: array, items: { type: string } }
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/EntraEvaluationRequest" }
+    EntraAuthorityContextResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        registration_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        issuer: { type: string }
+        client_id: { type: string }
+        subject: { type: string }
+        groups: { type: array, items: { type: string } }
+        roles: { type: array, items: { type: string } }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, admin]
+    SlackPrincipal:
+      type: object
+      properties:
+        user_id: { type: string }
+        email: { type: string }
+    CreateSlackWorkspaceBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        workspace_id: { type: string }
+        workspace_name: { type: string }
+        workspace_url: { type: string }
+        mission_ref: { type: string }
+        required_roles: { type: array, items: { type: string } }
+        admin_roles: { type: array, items: { type: string } }
+        allowed_channels: { type: array, items: { type: string } }
+        blocked_channels: { type: array, items: { type: string } }
+        allowed_users: { type: array, items: { type: string } }
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum: [post_message, edit_message, delete_message, react_message, start_thread]
+        role_claim: { type: string }
+        role_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [workspace_id, mission_ref]
+    SlackWorkspaceBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        workspace_id: { type: string }
+        workspace_name: { type: string }
+        workspace_url: { type: string }
+        mission_ref: { type: string }
+        required_roles: { type: array, items: { type: string } }
+        admin_roles: { type: array, items: { type: string } }
+        allowed_channels: { type: array, items: { type: string } }
+        blocked_channels: { type: array, items: { type: string } }
+        allowed_users: { type: array, items: { type: string } }
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum: [post_message, edit_message, delete_message, react_message, start_thread]
+        role_claim: { type: string }
+        role_match_mode: { type: string }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: { type: string } }
+        created_by: { $ref: "#/components/schemas/SlackPrincipal" }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_user_id: { type: string }
+        last_resolution_status: { type: string }
+      required: [binding_id, workspace_id, mission_ref, status, created_at]
+    SlackActionResource:
+      type: object
+      properties:
+        type: { type: string }
+        id: { type: string }
+        channel_id: { type: string }
+      required: [type, id]
+    SlackMessageAction:
+      type: object
+      additionalProperties: true
+      properties:
+        type: { type: string }
+        name: { type: string }
+        resource: { $ref: "#/components/schemas/SlackActionResource" }
+        operation: { type: string }
+      required: [type, resource, operation]
+    SlackEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action: { $ref: "#/components/schemas/SlackMessageAction" }
+      required: [actor, action]
+    AuthorizeSlackMessageActionRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        workspace_id: { type: string }
+        user_id: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        channel_id: { type: string }
+        action:
+          type: string
+          enum: [post_message, edit_message, delete_message, react_message, start_thread]
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/SlackEvaluationRequest" }
+      required: [workspace_id, action]
+    SlackMessageAuthorizationResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        workspace_id: { type: string }
+        user_id: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        channel_id: { type: string }
+        action: { type: string }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, admin]
+    AdminSession:
+      type: object
+      properties:
+        principal: { $ref: "#/components/schemas/Principal" }
+        capabilities: { type: object, additionalProperties: { type: boolean } }
+        api_version: { type: string }
+      required: [principal, capabilities, api_version]
+    OperationsSummary:
+      type: object
+      properties:
+        missions_total: { type: integer }
+        missions_by_state: { type: object, additionalProperties: { type: integer } }
+        pending_proposals: { type: integer }
+        pending_expansions: { type: integer }
+        active_containments: { type: integer }
+        active_agents: { type: integer }
+        active_projections: { type: integer }
+        recent_event_count: { type: integer }
+        service_capabilities: { type: object, additionalProperties: true }
+      required: [missions_total, missions_by_state, pending_proposals, pending_expansions, active_containments, active_agents, active_projections, recent_event_count, service_capabilities]
+    MissionPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Mission" } } } }] }
+    ProposalPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/MissionProposal" } } } }] }
+    ExpansionPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ExpansionRequest" } } } }] }
+    AgentPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/AgentIdentity" } } } }] }
+    ToolContractPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ToolContract" } } } }] }
+    ProjectionPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Projection" } } } }] }
+    EventPage: { allOf: [{ $ref: "#/components/schemas/Page" }, { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/EventRecord" } } } }] }
+    Page:
+      type: object
+      properties:
+        items: { type: array, items: {} }
+        next_cursor: { type: string }
+        total: { type: integer }
+      required: [items, total]

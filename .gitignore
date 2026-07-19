@@ -5,3 +5,10 @@
 /.cache/
 *.test
 coverage.out
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+playwright-report/
+test-results/

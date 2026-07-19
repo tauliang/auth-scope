@@ -1,0 +1,171 @@
+{
+  "scenario_name": "Finance Board Packet Mission Authority Demo",
+  "tenant_id": "demo",
+  "operators": {
+    "alice": {
+      "subject": "alice@example.com",
+      "issuer": "https://idp.example.com",
+      "role": "Mission owner and final approver"
+    },
+    "bob": {
+      "subject": "bob@example.com",
+      "issuer": "https://idp.example.com",
+      "role": "Risk reviewer and first approval"
+    }
+  },
+  "agent": {
+    "provider": "https://agents.example.com",
+    "client_id": "research-agent-demo-{run_id}",
+    "instance_id": "inst_demo_{run_id}"
+  },
+  "mission": {
+    "principal": {
+      "subject": "alice@example.com",
+      "issuer": "https://idp.example.com",
+      "tenant_subject": "finance-ops",
+      "grant_ref": "grant:board-packet:{run_id}"
+    },
+    "intent": {
+      "objective": "Prepare board packet demo {run_id}",
+      "business_context": "Finance close evidence for the Q3 board meeting",
+      "template": "board_packet"
+    },
+    "duration_hours": 168,
+    "authority_region": {
+      "resources": [
+        {
+          "type": "drive_folder",
+          "id": "board-{run_id}",
+          "actions": ["read", "write_draft"],
+          "constraints": {
+            "finance.close.status": "open",
+            "risk": "low"
+          }
+        }
+      ],
+      "forbidden_actions": ["send_external", "delete_source"]
+    },
+    "conditions": [
+      {
+        "id": "close-open",
+        "expression": "finance.close.status == 'open'",
+        "evaluation": "per_action",
+        "on_failure": "suspend"
+      },
+      {
+        "id": "low-risk-or-reversible",
+        "expression": "risk == 'low' || reversible == true",
+        "evaluation": "per_action",
+        "on_failure": "require_approval"
+      }
+    ],
+    "delegation": {
+      "permitted": true,
+      "max_depth": 1,
+      "current_depth": 0,
+      "attenuation": "strict_subset",
+      "cascade_revocation": true
+    },
+    "risk": {
+      "default_mode": "signal_based",
+      "sync_required_for": ["send_external", "payment"],
+      "fail_closed_for": ["credential_export", "delete_source"],
+      "revocation_lag_tolerance_seconds": 0
+    }
+  },
+  "contexts": {
+    "in_scope": {
+      "finance.close.status": "open",
+      "risk": "low",
+      "reversible": true,
+      "demo.step": "in-scope-evaluation"
+    },
+    "expansion": {
+      "finance.close.status": "open",
+      "risk": "high",
+      "reversible": false,
+      "business_owner_present": true,
+      "demo.step": "expansion-required"
+    },
+    "tool_gateway": {
+      "finance.close.status": "open",
+      "risk": "medium",
+      "reversible": true,
+      "demo.step": "tool-gateway-authorize"
+    }
+  },
+  "actions": {
+    "in_scope": {
+      "type": "tool_call",
+      "name": "drive.read_board_folder",
+      "resource": {
+        "type": "drive_folder",
+        "id": "board-{run_id}"
+      },
+      "operation": "read"
+    },
+    "expansion": {
+      "type": "tool_call",
+      "name": "slack.post_board_update",
+      "resource": {
+        "type": "slack_channel",
+        "id": "board-updates-{run_id}"
+      },
+      "operation": "post_update"
+    },
+    "negotiation_request": {
+      "resources": [
+        {
+          "type": "drive_folder",
+          "id": "board-{run_id}",
+          "actions": ["read", "delete_source"]
+        }
+      ],
+      "forbidden_actions": ["send_external"]
+    }
+  },
+  "approval_rule": {
+    "applies_to": "expansion",
+    "resource_type": "slack_channel",
+    "resource_id": "board-updates-{run_id}",
+    "operation": "post_update",
+    "risk_level": "high",
+    "required_approvals": 2,
+    "allowed_issuers": ["https://idp.example.com"]
+  },
+  "tool_contract": {
+    "tool_name": "demo.slack.post.{run_id}",
+    "resource_type": "slack_channel",
+    "resource_id_param": "channel_id",
+    "operation": "post_update",
+    "action_type": "tool_call",
+    "required_context": ["finance.close.status"],
+    "metadata": {
+      "demo": "true",
+      "owner": "finance-ops"
+    }
+  },
+  "projection": {
+    "type": "mcp_context",
+    "ttl_seconds": 300,
+    "claims": {
+      "audience": "demo-mcp-gateway",
+      "purpose": "board-packet-context"
+    }
+  },
+  "lease": {
+    "ttl_seconds": 120
+  },
+  "containment": {
+    "target_type": "agent",
+    "reason": "Demo incident: hold this agent while an anomalous update is investigated",
+    "metadata": {
+      "demo": "true",
+      "trigger": "post-approval-containment"
+    }
+  },
+  "ui": {
+    "approval_reason": "Bob reviewed risk; Alice approves bounded Slack posting for the demo.",
+    "containment_reason": "Demo containment drill completed."
+  }
+}

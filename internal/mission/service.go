@@ -1,10 +1,12 @@
 package mission
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -19,12 +21,123 @@ func (SystemClock) Now() time.Time {
 }
 
 type Service struct {
-	store Store
-	clock Clock
+	identities          IdentityStore
+	missions            MissionStore
+	governance          GovernanceStore
+	projections         ProjectionStore
+	approvals           ApprovalStore
+	negotiations        NegotiationStore
+	containments        ContainmentStore
+	expansionDecisions  ExpansionDecisionStore
+	proposalApprovals   ProposalApprovalStore
+	events              EventStore
+	github              GitHubStore
+	okta                OktaStore
+	entra               EntraStore
+	slack               SlackStore
+	servicenow          ServiceNowStore
+	clock               Clock
+	artifactKey         []byte
+	githubWebhookSecret []byte
+	authorityGuard      AuthorityGuard
+	governanceReads     GovernanceReadStore
+}
+
+type ServiceDependencies struct {
+	Identities          IdentityStore
+	Missions            MissionStore
+	Governance          GovernanceStore
+	Projections         ProjectionStore
+	Approvals           ApprovalStore
+	Negotiations        NegotiationStore
+	Containments        ContainmentStore
+	ExpansionDecisions  ExpansionDecisionStore
+	ProposalApprovals   ProposalApprovalStore
+	Events              EventStore
+	GitHub              GitHubStore
+	Okta                OktaStore
+	Entra               EntraStore
+	Slack               SlackStore
+	ServiceNow          ServiceNowStore
+	GovernanceReads     GovernanceReadStore
+	AuthorityGuard      AuthorityGuard
+	ArtifactKey         []byte
+	GitHubWebhookSecret []byte
+}
+
+type containmentGuardStores struct {
+	MissionStore
+	GovernanceReadStore
 }
 
 func NewService(store Store, clock Clock) *Service {
-	return &Service{store: store, clock: clock}
+	return NewServiceWithArtifactKey(store, clock, nil)
+}
+
+func NewServiceWithArtifactKey(store Store, clock Clock, artifactKey []byte) *Service {
+	return NewServiceWithDependencies(ServiceDependencies{
+		Identities:         store,
+		Missions:           store,
+		Governance:         store,
+		Projections:        store,
+		Approvals:          store,
+		Negotiations:       store,
+		Containments:       store,
+		ExpansionDecisions: store,
+		ProposalApprovals:  store,
+		Events:             store,
+		GitHub:             store,
+		Okta:               store,
+		Entra:              store,
+		Slack:              store,
+		GovernanceReads:    store,
+		ArtifactKey:        artifactKey,
+	}, clock)
+}
+
+func NewServiceWithDependencies(dependencies ServiceDependencies, clock Clock) *Service {
+	if clock == nil {
+		clock = SystemClock{}
+	}
+	if dependencies.AuthorityGuard == nil {
+		dependencies.AuthorityGuard = NewContainmentGuard(containmentGuardStores{
+			MissionStore:        dependencies.Missions,
+			GovernanceReadStore: dependencies.GovernanceReads,
+		})
+	}
+	if dependencies.ProposalApprovals == nil {
+		if approvals, ok := dependencies.Missions.(ProposalApprovalStore); ok {
+			dependencies.ProposalApprovals = approvals
+		}
+	}
+	if len(dependencies.ArtifactKey) == 0 {
+		dependencies.ArtifactKey = decisionArtifactKeyFromEnv()
+	}
+	if len(dependencies.GitHubWebhookSecret) == 0 {
+		dependencies.GitHubWebhookSecret = GitHubWebhookSecretFromEnv()
+	}
+	return &Service{
+		identities:          dependencies.Identities,
+		missions:            dependencies.Missions,
+		governance:          dependencies.Governance,
+		projections:         dependencies.Projections,
+		approvals:           dependencies.Approvals,
+		negotiations:        dependencies.Negotiations,
+		containments:        dependencies.Containments,
+		expansionDecisions:  dependencies.ExpansionDecisions,
+		proposalApprovals:   dependencies.ProposalApprovals,
+		events:              dependencies.Events,
+		github:              dependencies.GitHub,
+		okta:                dependencies.Okta,
+		entra:               dependencies.Entra,
+		slack:               dependencies.Slack,
+		servicenow:          dependencies.ServiceNow,
+		clock:               clock,
+		artifactKey:         dependencies.ArtifactKey,
+		githubWebhookSecret: dependencies.GitHubWebhookSecret,
+		authorityGuard:      dependencies.AuthorityGuard,
+		governanceReads:     dependencies.GovernanceReads,
+	}
 }
 
 func (s *Service) CreateProposal(req CreateProposalRequest) (CreateProposalResponse, error) {
@@ -75,10 +188,10 @@ func (s *Service) CreateProposal(req CreateProposalRequest) (CreateProposalRespo
 		Risk:            req.Risk,
 		CreatedAt:       now,
 	}
-	if err := s.store.SaveProposal(proposal); err != nil {
+	if err := s.missions.SaveProposal(proposal); err != nil {
 		return CreateProposalResponse{}, err
 	}
-	_ = s.store.AppendEvent(Event{
+	_ = s.events.AppendEvent(Event{
 		EventID:    newID("mev"),
 		TenantID:   proposal.TenantID,
 		Type:       "mission_proposal.created",
@@ -96,7 +209,7 @@ func (s *Service) CreateProposal(req CreateProposalRequest) (CreateProposalRespo
 }
 
 func (s *Service) ApproveProposal(id string, req ApproveProposalRequest) (ApproveProposalResponse, error) {
-	proposal, err := s.store.GetProposal(id)
+	proposal, err := s.missions.GetProposal(id)
 	if err != nil {
 		return ApproveProposalResponse{}, err
 	}
@@ -129,11 +242,7 @@ func (s *Service) ApproveProposal(id string, req ApproveProposalRequest) (Approv
 	if mission.Lifecycle.NotBefore.IsZero() {
 		mission.Lifecycle.NotBefore = now
 	}
-	if err := s.store.SaveMission(mission); err != nil {
-		return ApproveProposalResponse{}, err
-	}
-	_ = s.store.DeleteProposal(id)
-	_ = s.store.AppendEvent(Event{
+	event := Event{
 		EventID:      newID("mev"),
 		MissionRef:   mission.MissionRef,
 		TenantID:     mission.TenantID,
@@ -142,7 +251,26 @@ func (s *Service) ApproveProposal(id string, req ApproveProposalRequest) (Approv
 		Payload:      map[string]any{"proposal_id": id},
 		VersionAfter: mission.Version,
 		OccurredAt:   now,
-	})
+	}
+	if s.proposalApprovals != nil {
+		if err := s.proposalApprovals.CommitProposalApproval(context.Background(), ProposalApprovalCommit{
+			ProposalID: id,
+			Mission:    mission,
+			Event:      event,
+		}); err != nil {
+			return ApproveProposalResponse{}, err
+		}
+	} else {
+		if err := s.missions.SaveMission(mission); err != nil {
+			return ApproveProposalResponse{}, err
+		}
+		if err := s.missions.DeleteProposal(id); err != nil {
+			return ApproveProposalResponse{}, err
+		}
+		if err := s.events.AppendEvent(event); err != nil {
+			return ApproveProposalResponse{}, err
+		}
+	}
 
 	return ApproveProposalResponse{
 		MissionRef:     mission.MissionRef,
@@ -152,91 +280,108 @@ func (s *Service) ApproveProposal(id string, req ApproveProposalRequest) (Approv
 }
 
 func (s *Service) Evaluate(ref string, req EvaluateRequest) (EvaluateResponse, error) {
-	mission, err := s.store.GetMission(ref)
+	mission, err := s.missions.GetMission(ref)
 	if err != nil {
 		return EvaluateResponse{}, err
 	}
 	now := s.clock.Now()
 	if expired(mission, now) {
-		updated, _ := s.transition(mission, StateExpired, "mission_expired", nil, "")
-		return deny(updated, "MISSION_EXPIRED", "The mission has expired."), nil
+		updated, err := s.transition(mission, StateExpired, "mission_expired", nil, "")
+		if err != nil {
+			return EvaluateResponse{}, err
+		}
+		return s.finalizeEvaluation(updated, req, deny(updated, "MISSION_EXPIRED", "The mission has expired."), now)
 	}
 	if mission.State != StateActive {
-		return deny(mission, "MISSION_NOT_ACTIVE", "The mission is not active."), nil
+		return s.finalizeEvaluation(mission, req, deny(mission, "MISSION_NOT_ACTIVE", "The mission is not active."), now)
 	}
 	if !actorMatches(mission, req.Actor) {
-		return deny(mission, "ACTOR_NOT_AUTHORIZED_FOR_MISSION", "The actor is not authorized for this mission."), nil
+		return s.finalizeEvaluation(mission, req, deny(mission, "ACTOR_NOT_AUTHORIZED_FOR_MISSION", "The actor is not authorized for this mission."), now)
+	}
+	if rule, ok, err := s.matchingActiveContainmentForEvaluation(mission, req.Actor, req.Action, now); err != nil {
+		return EvaluateResponse{}, err
+	} else if ok {
+		return s.finalizeEvaluation(mission, req, EvaluateResponse{
+			Decision:       DecisionDeny,
+			MissionRef:     mission.MissionRef,
+			MissionVersion: mission.Version,
+			ReasonCodes:    []string{"CONTAINMENT_ACTIVE"},
+			HumanReason:    "The requested action is blocked by an active containment rule.",
+			Constraints:    map[string]any{"containment_rule_id": rule.RuleID},
+		}, now)
 	}
 	if req.MissionVersionSeen > 0 && req.MissionVersionSeen < mission.Version {
-		return EvaluateResponse{
+		return s.finalizeEvaluation(mission, req, EvaluateResponse{
 			Decision:       DecisionRequireRefresh,
 			MissionRef:     mission.MissionRef,
 			MissionVersion: mission.Version,
 			ReasonCodes:    []string{"MISSION_VERSION_STALE"},
 			HumanReason:    "The caller has stale mission state.",
-		}, nil
+		}, now)
 	}
-	if !actionInScope(mission.AuthorityRegion, req.Action) {
+	if !actionInScopeForContext(mission.AuthorityRegion, req.Action, req.Context) {
 		if irreversible(req.Context) || highRisk(req.Context) {
-			return EvaluateResponse{
+			expansion, err := s.createExpansionRequestForMission(mission, CreateExpansionRequest{
+				MissionVersionSeen: effectiveMissionVersionSeen(req.MissionVersionSeen, mission.Version),
+				Requester:          req.Actor,
+				Action:             req.Action,
+				Context:            req.Context,
+				RequestedAuthority: authorityForAction(req.Action),
+				Justification:      "Risky action outside approved mission scope requires human approval.",
+			}, now)
+			if err != nil {
+				return EvaluateResponse{}, err
+			}
+			return s.finalizeEvaluationWithEvidence(mission, req, EvaluateResponse{
 				Decision:       DecisionRequireApproval,
 				MissionRef:     mission.MissionRef,
 				MissionVersion: mission.Version,
 				ReasonCodes:    []string{"ACTION_OUTSIDE_MISSION_SCOPE", "APPROVAL_REQUIRED"},
 				HumanReason:    "The requested action is outside the approved mission scope.",
-				Escalation:     &Escalation{Type: "mission_expansion", URL: "/v1/missions/" + mission.MissionRef + "/expansion-requests"},
-			}, nil
+				Constraints:    map[string]any{"expansion_request_id": expansion.ExpansionID},
+				Escalation:     &Escalation{Type: "mission_expansion", URL: "/v1/expansion-requests/" + expansion.ExpansionID},
+			}, now, nil, expansion.ExpansionID)
 		}
-		return EvaluateResponse{
+		return s.finalizeEvaluation(mission, req, EvaluateResponse{
 			Decision:       DecisionRequireExpansion,
 			MissionRef:     mission.MissionRef,
 			MissionVersion: mission.Version,
 			ReasonCodes:    []string{"ACTION_OUTSIDE_MISSION_SCOPE"},
 			HumanReason:    "The requested action needs mission expansion.",
-		}, nil
+		}, now)
 	}
-	conditionsOK, failedCondition, err := evaluateConditions(mission.Conditions, req.Context)
+	conditionsOK, failedCondition, conditionResults, err := evaluateConditionsWithEvidence(mission.Conditions, req.Context)
 	if err != nil {
 		return EvaluateResponse{}, err
 	}
 	if !conditionsOK {
 		if shouldSuspend(mission.Conditions, failedCondition) {
-			updated, _ := s.transition(mission, StateSuspended, "condition_failed", map[string]any{"condition_id": failedCondition}, "")
-			return EvaluateResponse{
+			updated, err := s.transition(mission, StateSuspended, "condition_failed", map[string]any{"condition_id": failedCondition}, "")
+			if err != nil {
+				return EvaluateResponse{}, err
+			}
+			return s.finalizeEvaluationWithEvidence(updated, req, EvaluateResponse{
 				Decision:       DecisionSuspend,
 				MissionRef:     updated.MissionRef,
 				MissionVersion: updated.Version,
 				ReasonCodes:    []string{"MISSION_CONDITION_FAILED", failedCondition},
 				HumanReason:    "A mission condition failed and the mission has been suspended.",
-			}, nil
+			}, now, conditionResults, "")
 		}
-		return deny(mission, "MISSION_CONDITION_FAILED", "A mission condition failed."), nil
+		return s.finalizeEvaluationWithEvidence(mission, req, deny(mission, "MISSION_CONDITION_FAILED", "A mission condition failed."), now, conditionResults, "")
 	}
 
-	artifact := newID("mdar")
-	_ = s.store.AppendEvent(Event{
-		EventID:       newID("mev"),
-		MissionRef:    mission.MissionRef,
-		TenantID:      mission.TenantID,
-		Type:          "mission.evaluated",
-		Actor:         map[string]any{"agent_instance_id": req.Actor.AgentInstanceID, "client_id": req.Actor.ClientID},
-		Payload:       map[string]any{"decision": DecisionAllow, "decision_artifact": artifact, "operation": req.Action.Operation},
-		VersionBefore: mission.Version,
-		VersionAfter:  mission.Version,
-		OccurredAt:    now,
-	})
-	return EvaluateResponse{
-		Decision:         DecisionAllow,
-		MissionRef:       mission.MissionRef,
-		MissionVersion:   mission.Version,
-		ReasonCodes:      []string{"IN_SCOPE", "MISSION_ACTIVE", "CONDITIONS_TRUE"},
-		HumanReason:      "The action is authorized by the active mission.",
-		DecisionArtifact: artifact,
-	}, nil
+	return s.finalizeEvaluationWithEvidence(mission, req, EvaluateResponse{
+		Decision:       DecisionAllow,
+		MissionRef:     mission.MissionRef,
+		MissionVersion: mission.Version,
+		ReasonCodes:    []string{"IN_SCOPE", "MISSION_ACTIVE", "CONDITIONS_TRUE"},
+		HumanReason:    "The action is authorized by the active mission.",
+	}, now, conditionResults, "")
 }
 
 func (s *Service) Resume(ref string, req ResumeRequest) (EvaluateResponse, error) {
-	mission, err := s.store.GetMission(ref)
+	mission, err := s.missions.GetMission(ref)
 	if err != nil {
 		return EvaluateResponse{}, err
 	}
@@ -250,6 +395,18 @@ func (s *Service) Resume(ref string, req ResumeRequest) (EvaluateResponse, error
 	}
 	if !actorMatches(mission, req.Actor) {
 		return deny(mission, "ACTOR_NOT_AUTHORIZED_FOR_MISSION", "The actor is not authorized for this mission."), nil
+	}
+	if rule, ok, err := s.matchingActiveContainmentForEvaluation(mission, req.Actor, Action{Type: "mission", Name: "resume", Resource: ActionResource{Type: "mission", ID: mission.MissionRef}, Operation: "resume"}, now); err != nil {
+		return EvaluateResponse{}, err
+	} else if ok {
+		return EvaluateResponse{
+			Decision:       DecisionDeny,
+			MissionRef:     mission.MissionRef,
+			MissionVersion: mission.Version,
+			ReasonCodes:    []string{"CONTAINMENT_ACTIVE"},
+			HumanReason:    "Mission resume is blocked by an active containment rule.",
+			Constraints:    map[string]any{"containment_rule_id": rule.RuleID},
+		}, nil
 	}
 	if req.MissionVersionSeen > 0 && req.MissionVersionSeen < mission.Version {
 		return EvaluateResponse{
@@ -269,7 +426,7 @@ func (s *Service) Resume(ref string, req ResumeRequest) (EvaluateResponse, error
 }
 
 func (s *Service) Delegate(ref string, req DelegationRequest) (DelegationResponse, error) {
-	parent, err := s.store.GetMission(ref)
+	parent, err := s.missions.GetMission(ref)
 	if err != nil {
 		return DelegationResponse{}, err
 	}
@@ -278,6 +435,11 @@ func (s *Service) Delegate(ref string, req DelegationRequest) (DelegationRespons
 	}
 	if !actorMatches(parent, req.DelegatingActor) {
 		return DelegationResponse{}, fmt.Errorf("delegating actor is not authorized for parent mission")
+	}
+	if rule, ok, err := s.matchingActiveContainmentForEvaluation(parent, req.DelegatingActor, Action{Type: "mission", Name: "delegate", Resource: ActionResource{Type: "mission", ID: parent.MissionRef}, Operation: "delegate"}, s.clock.Now()); err != nil {
+		return DelegationResponse{}, err
+	} else if ok {
+		return DelegationResponse{}, fmt.Errorf("delegation blocked by containment rule %s", rule.RuleID)
 	}
 	if !parent.Delegation.Permitted {
 		return DelegationResponse{}, fmt.Errorf("delegation is not permitted")
@@ -324,10 +486,10 @@ func (s *Service) Delegate(ref string, req DelegationRequest) (DelegationRespons
 		Risk:       parent.Risk,
 		Approval:   parent.Approval,
 	}
-	if err := s.store.SaveMission(child); err != nil {
+	if err := s.missions.SaveMission(child); err != nil {
 		return DelegationResponse{}, err
 	}
-	_ = s.store.AppendEvent(Event{
+	_ = s.events.AppendEvent(Event{
 		EventID:      newID("mev"),
 		MissionRef:   child.MissionRef,
 		TenantID:     child.TenantID,
@@ -346,7 +508,7 @@ func (s *Service) Delegate(ref string, req DelegationRequest) (DelegationRespons
 }
 
 func (s *Service) Revoke(ref string, req StateChangeRequest) (Mission, error) {
-	mission, err := s.store.GetMission(ref)
+	mission, err := s.missions.GetMission(ref)
 	if err != nil {
 		return Mission{}, err
 	}
@@ -354,7 +516,7 @@ func (s *Service) Revoke(ref string, req StateChangeRequest) (Mission, error) {
 }
 
 func (s *Service) Complete(ref string, req StateChangeRequest) (Mission, error) {
-	mission, err := s.store.GetMission(ref)
+	mission, err := s.missions.GetMission(ref)
 	if err != nil {
 		return Mission{}, err
 	}
@@ -362,11 +524,74 @@ func (s *Service) Complete(ref string, req StateChangeRequest) (Mission, error) 
 }
 
 func (s *Service) Introspect(ref string) (Mission, error) {
-	return s.store.GetMission(ref)
+	return s.missions.GetMission(ref)
 }
 
 func (s *Service) Events() []Event {
-	return s.store.Events()
+	return s.events.Events()
+}
+
+func (s *Service) finalizeEvaluation(mission Mission, req EvaluateRequest, resp EvaluateResponse, now time.Time) (EvaluateResponse, error) {
+	return s.finalizeEvaluationWithEvidence(mission, req, resp, now, nil, "")
+}
+
+func (s *Service) finalizeEvaluationWithEvidence(mission Mission, req EvaluateRequest, resp EvaluateResponse, now time.Time, conditionResults []ConditionEvaluation, expansionID string) (EvaluateResponse, error) {
+	if resp.MissionRef == "" {
+		resp.MissionRef = mission.MissionRef
+	}
+	if resp.MissionVersion == 0 {
+		resp.MissionVersion = mission.Version
+	}
+	evidenceID := newID("mevd")
+	contextHash := HashDecisionContext(req.Context)
+	payload := DecisionArtifactPayload{
+		ArtifactID:         newID("mdar"),
+		MissionRef:         resp.MissionRef,
+		MissionVersion:     resp.MissionVersion,
+		PolicyVersion:      DefaultPolicyVersionID,
+		EvidenceID:         evidenceID,
+		ExpansionRequestID: expansionID,
+		Decision:           resp.Decision,
+		ReasonCodes:        resp.ReasonCodes,
+		Actor:              req.Actor,
+		Action:             req.Action,
+		ContextHash:        contextHash,
+		IssuedAt:           now,
+	}
+	artifact, err := SignDecisionArtifact(payload, s.artifactKey)
+	if err != nil {
+		return EvaluateResponse{}, err
+	}
+	resp.DecisionArtifact = artifact
+	if err := s.governance.SaveEvaluationEvidence(EvaluationEvidence{
+		EvidenceID:       evidenceID,
+		MissionRef:       resp.MissionRef,
+		MissionVersion:   resp.MissionVersion,
+		TenantID:         mission.TenantID,
+		PolicyVersion:    DefaultPolicyVersionID,
+		Actor:            req.Actor,
+		Action:           req.Action,
+		ContextHash:      contextHash,
+		Decision:         resp.Decision,
+		ReasonCodes:      resp.ReasonCodes,
+		ConditionResults: conditionResults,
+		Artifact:         artifact,
+		CreatedAt:        now,
+	}); err != nil {
+		return EvaluateResponse{}, err
+	}
+	_ = s.events.AppendEvent(Event{
+		EventID:       newID("mev"),
+		MissionRef:    mission.MissionRef,
+		TenantID:      mission.TenantID,
+		Type:          "mission.evaluated",
+		Actor:         map[string]any{"agent_instance_id": req.Actor.AgentInstanceID, "client_id": req.Actor.ClientID, "key_thumbprint": req.Actor.KeyThumbprint},
+		Payload:       map[string]any{"decision": resp.Decision, "decision_artifact": artifact, "evidence_id": evidenceID, "policy_version": DefaultPolicyVersionID, "expansion_request_id": expansionID, "operation": req.Action.Operation, "resource_type": req.Action.Resource.Type, "resource_id": req.Action.Resource.ID, "reason_codes": resp.ReasonCodes},
+		VersionBefore: mission.Version,
+		VersionAfter:  mission.Version,
+		OccurredAt:    now,
+	})
+	return resp, nil
 }
 
 func (s *Service) transitionCascade(mission Mission, state State, reason string, req StateChangeRequest) (Mission, error) {
@@ -375,7 +600,7 @@ func (s *Service) transitionCascade(mission Mission, state State, reason string,
 		return Mission{}, err
 	}
 	if mission.Delegation.CascadeRevocation || state == StateCompleted || state == StateRevoked {
-		children, err := s.store.ChildrenOf(mission.MissionRef)
+		children, err := s.missions.ChildrenOf(mission.MissionRef)
 		if err != nil {
 			return Mission{}, err
 		}
@@ -404,14 +629,14 @@ func (s *Service) transition(mission Mission, state State, reason string, payloa
 	before := mission.Version
 	mission.State = state
 	mission.Version++
-	if err := s.store.UpdateMission(mission); err != nil {
+	if err := s.missions.UpdateMission(mission); err != nil {
 		return Mission{}, err
 	}
 	if payload == nil {
 		payload = map[string]any{}
 	}
 	payload["reason"] = reason
-	_ = s.store.AppendEvent(Event{
+	_ = s.events.AppendEvent(Event{
 		EventID:       newID("mev"),
 		MissionRef:    mission.MissionRef,
 		TenantID:      mission.TenantID,
@@ -432,7 +657,7 @@ func actorMatches(mission Mission, actor Actor) bool {
 	if mission.Agent.InstanceID != actor.AgentInstanceID || mission.Agent.ClientID != actor.ClientID {
 		return false
 	}
-	if mission.Agent.KeyThumbprint != "" && actor.KeyThumbprint != "" {
+	if mission.Agent.KeyThumbprint != "" {
 		return mission.Agent.KeyThumbprint == actor.KeyThumbprint
 	}
 	return true
@@ -484,4 +709,50 @@ func newID(prefix string) string {
 		panic(errors.Join(fmt.Errorf("generate id"), err))
 	}
 	return prefix + "_" + hex.EncodeToString(buf[:])
+}
+
+// OutboxPublisher handles publishing events from the outbox table.
+type OutboxPublisher struct {
+	store    OutboxStore
+	interval time.Duration
+	logger   *slog.Logger
+}
+
+// NewOutboxPublisher creates a new outbox publisher.
+func NewOutboxPublisher(store OutboxStore, interval time.Duration) *OutboxPublisher {
+	return &OutboxPublisher{
+		store:    store,
+		interval: interval,
+		logger:   slog.Default().With("component", "outbox-publisher"),
+	}
+}
+
+// Start begins the polling loop to publish outbox events.
+func (p *OutboxPublisher) Start(ctx context.Context) error {
+	ticker := time.NewTicker(p.interval)
+	defer ticker.Stop()
+
+	p.logger.Info("outbox publisher started", "interval_ms", p.interval.Milliseconds())
+
+	for {
+		select {
+		case <-ctx.Done():
+			p.logger.Info("outbox publisher stopped")
+			return ctx.Err()
+		case <-ticker.C:
+			events, err := p.store.PublishOutboxEvents()
+			if err != nil {
+				p.logger.Error("failed to publish outbox events", "error", err)
+				continue
+			}
+
+			for _, event := range events {
+				p.logger.Info("published outbox event",
+					"id", event.ID,
+					"type", event.Type,
+					"mission_ref", event.MissionRef,
+				)
+			}
+		}
+	}
 }

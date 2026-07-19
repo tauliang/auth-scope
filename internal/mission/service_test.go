@@ -68,6 +68,48 @@ func TestOutOfScopeIrreversibleActionRequiresApproval(t *testing.T) {
 	}
 }
 
+func TestAuthorityGrantConstraintsMustMatchEvaluationContext(t *testing.T) {
+	service := testService()
+	proposalReq := validProposalRequest()
+	proposalReq.AuthorityRegion.Resources[0].Constraints = map[string]any{"finance.close.status": "open", "risk": "low"}
+	proposal, err := service.CreateProposal(proposalReq)
+	if err != nil {
+		t.Fatalf("CreateProposal: %v", err)
+	}
+	mission, err := service.ApproveProposal(proposal.ProposalID, ApproveProposalRequest{
+		Approver: Principal{Subject: "alice@example.com", Issuer: "https://idp.example.com"},
+	})
+	if err != nil {
+		t.Fatalf("ApproveProposal: %v", err)
+	}
+
+	denied, err := service.Evaluate(mission.MissionRef, EvaluateRequest{
+		MissionVersionSeen: mission.MissionVersion,
+		Actor:              Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Action:             Action{Type: "tool_call", Resource: ActionResource{Type: "drive_folder", ID: "board"}, Operation: "read"},
+		Context:            map[string]any{"finance.close.status": "open", "risk": "high"},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate constrained deny: %v", err)
+	}
+	if denied.Decision == DecisionAllow {
+		t.Fatalf("expected constrained grant to deny or require expansion, got %#v", denied)
+	}
+
+	allowed, err := service.Evaluate(mission.MissionRef, EvaluateRequest{
+		MissionVersionSeen: mission.MissionVersion,
+		Actor:              Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Action:             Action{Type: "tool_call", Resource: ActionResource{Type: "drive_folder", ID: "board"}, Operation: "read"},
+		Context:            map[string]any{"finance.close.status": "open", "risk": "low"},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate constrained allow: %v", err)
+	}
+	if allowed.Decision != DecisionAllow {
+		t.Fatalf("expected constrained grant to allow, got %#v", allowed)
+	}
+}
+
 func TestDelegationRequiresStrictSubsetAndCascadeRevokesChild(t *testing.T) {
 	service := testService()
 	parent := approveTestMission(t, service)

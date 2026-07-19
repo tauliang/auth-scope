@@ -108,6 +108,12 @@ type Mission struct {
 	Approval        ApprovalEvidence `json:"approval_evidence,omitempty"`
 }
 
+type ProposalApprovalCommit struct {
+	ProposalID string
+	Mission    Mission
+	Event      Event
+}
+
 type ApprovalEvidence struct {
 	Approver    Principal `json:"approver,omitempty"`
 	ApprovedAt  time.Time `json:"approved_at,omitempty"`

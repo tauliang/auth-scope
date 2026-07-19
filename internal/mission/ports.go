@@ -103,6 +103,13 @@ type AtlassianStore interface {
 	ListAtlassianSiteBindings() ([]AtlassianSiteBinding, error)
 }
 
+type SalesforceStore interface {
+	SaveSalesforceOrgBinding(SalesforceOrgBinding) error
+	GetSalesforceOrgBinding(string) (SalesforceOrgBinding, error)
+	UpdateSalesforceOrgBinding(SalesforceOrgBinding) error
+	ListSalesforceOrgBindings() ([]SalesforceOrgBinding, error)
+}
+
 type SlackStore interface {
 	SaveSlackWorkspaceBinding(SlackWorkspaceBinding) error
 	GetSlackWorkspaceBinding(string) (SlackWorkspaceBinding, error)

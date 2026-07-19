@@ -2208,6 +2208,129 @@ func (s *PostgresStore) ListAtlassianSiteBindings() ([]mission.AtlassianSiteBind
 	return bindings, nil
 }
 
+// SaveSalesforceOrgBinding saves a Salesforce org mission binding.
+func (s *PostgresStore) SaveSalesforceOrgBinding(binding mission.SalesforceOrgBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal salesforce org binding: %w", err)
+	}
+	createdAt := binding.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SaveSalesforceOrgBinding", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO salesforce_org_bindings (
+			id, tenant_id, instance_url, org_id, mission_ref, status, binding_json, created_at, last_resolved_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, binding.BindingID, nullableString(binding.TenantID), binding.InstanceURL, nullableString(binding.OrgID), binding.MissionRef, binding.Status, bindingJSON, createdAt, nullableTime(binding.LastResolvedAt))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert salesforce org binding: %w", err)
+	}
+	return nil
+}
+
+// GetSalesforceOrgBinding retrieves a Salesforce org mission binding.
+func (s *PostgresStore) GetSalesforceOrgBinding(id string) (mission.SalesforceOrgBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetSalesforceOrgBinding", startTime)
+
+	var bindingJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT binding_json FROM salesforce_org_bindings WHERE id = $1`, id).Scan(&bindingJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.SalesforceOrgBinding{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.SalesforceOrgBinding{}, fmt.Errorf("query salesforce org binding: %w", err)
+	}
+	var binding mission.SalesforceOrgBinding
+	if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+		return mission.SalesforceOrgBinding{}, fmt.Errorf("unmarshal salesforce org binding: %w", err)
+	}
+	return binding, nil
+}
+
+// UpdateSalesforceOrgBinding updates a Salesforce org mission binding.
+func (s *PostgresStore) UpdateSalesforceOrgBinding(binding mission.SalesforceOrgBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal salesforce org binding: %w", err)
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("UpdateSalesforceOrgBinding", startTime)
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE salesforce_org_bindings SET
+			tenant_id = $1,
+			instance_url = $2,
+			org_id = $3,
+			mission_ref = $4,
+			status = $5,
+			binding_json = $6,
+			last_resolved_at = $7
+		WHERE id = $8
+	`, nullableString(binding.TenantID), binding.InstanceURL, nullableString(binding.OrgID), binding.MissionRef, binding.Status, bindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("update salesforce org binding: %w", err)
+	}
+	return rowsAffectedErr(result)
+}
+
+// ListSalesforceOrgBindings lists Salesforce org mission bindings.
+func (s *PostgresStore) ListSalesforceOrgBindings() ([]mission.SalesforceOrgBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListSalesforceOrgBindings", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT binding_json
+		FROM salesforce_org_bindings
+		ORDER BY instance_url ASC, mission_ref ASC, created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query salesforce org bindings: %w", err)
+	}
+	defer rows.Close()
+
+	bindings := make([]mission.SalesforceOrgBinding, 0)
+	for rows.Next() {
+		var bindingJSON []byte
+		if err := rows.Scan(&bindingJSON); err != nil {
+			return nil, fmt.Errorf("scan salesforce org binding: %w", err)
+		}
+		var binding mission.SalesforceOrgBinding
+		if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+			return nil, fmt.Errorf("unmarshal salesforce org binding: %w", err)
+		}
+		bindings = append(bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate salesforce org bindings: %w", err)
+	}
+	return bindings, nil
+}
+
 // AppendEvent appends an event and stages it in the outbox in one transaction.
 func (s *PostgresStore) AppendEvent(event mission.Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

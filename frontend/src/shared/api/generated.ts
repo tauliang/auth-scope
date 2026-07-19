@@ -756,6 +756,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/integrations/atlassian/site-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAtlassianSiteBindings"];
+        put?: never;
+        post: operations["createAtlassianSiteBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/atlassian/jira/issues/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["authorizeAtlassianJiraIssueAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/atlassian/confluence/pages/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["authorizeAtlassianConfluencePageAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/salesforce/org-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSalesforceOrgBindings"];
+        put?: never;
+        post: operations["createSalesforceOrgBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/salesforce/records/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["authorizeSalesforceRecordAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -1396,6 +1476,295 @@ export interface components {
             email?: string;
             roles?: string[];
             channel_id?: string;
+            action?: string;
+            admin: boolean;
+            reason_codes?: string[];
+            human_reason?: string;
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: {
+                [key: string]: unknown;
+            };
+            resolved_at?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CreateAtlassianSiteBindingRequest: {
+            tenant_id?: string;
+            /** @description Atlassian Cloud site URL, for example https://example.atlassian.net. */
+            site_url: string;
+            cloud_id?: string;
+            site_name?: string;
+            mission_ref: string;
+            jira_project_keys?: string[];
+            confluence_space_keys?: string[];
+            allowed_jira_actions?: ("view_issue" | "create_issue" | "update_issue" | "transition_issue" | "comment_issue")[];
+            allowed_page_actions?: ("view_page" | "create_page" | "update_page" | "comment_page")[];
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            email_claim?: string;
+            /** @enum {string} */
+            group_match_mode?: "any" | "all";
+            metadata?: {
+                [key: string]: string;
+            };
+        };
+        AtlassianSiteBinding: {
+            binding_id: string;
+            tenant_id?: string;
+            site_url: string;
+            cloud_id?: string;
+            site_name?: string;
+            mission_ref: string;
+            jira_project_keys?: string[];
+            confluence_space_keys?: string[];
+            allowed_jira_actions?: string[];
+            allowed_page_actions?: string[];
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            email_claim?: string;
+            group_match_mode?: string;
+            status: string;
+            metadata?: {
+                [key: string]: string;
+            };
+            created_by?: components["schemas"]["Principal"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_resolved_at?: string;
+            last_subject?: string;
+            last_resolution_status?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        AtlassianEvaluationRequest: {
+            mission_version_seen?: number;
+            actor: {
+                [key: string]: unknown;
+            };
+            action: {
+                type?: string;
+                name?: string;
+                resource?: {
+                    type: string;
+                    id: string;
+                    channel_id?: string;
+                };
+                operation?: string;
+            } & {
+                [key: string]: unknown;
+            };
+        };
+        AuthorizeAtlassianJiraIssueActionRequest: {
+            tenant_id?: string;
+            mission_ref?: string;
+            site_url?: string;
+            cloud_id?: string;
+            project_key?: string;
+            issue_key?: string;
+            issue_type?: string;
+            account_id?: string;
+            subject?: string;
+            email?: string;
+            groups?: string[];
+            /** @enum {string} */
+            action: "view_issue" | "create_issue" | "update_issue" | "transition_issue" | "comment_issue";
+            claims?: {
+                [key: string]: unknown;
+            };
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: components["schemas"]["AtlassianEvaluationRequest"];
+        };
+        AuthorizeAtlassianConfluencePageActionRequest: {
+            tenant_id?: string;
+            mission_ref?: string;
+            site_url?: string;
+            cloud_id?: string;
+            space_key: string;
+            page_id?: string;
+            page_title?: string;
+            account_id?: string;
+            subject?: string;
+            email?: string;
+            groups?: string[];
+            /** @enum {string} */
+            action: "view_page" | "create_page" | "update_page" | "comment_page";
+            claims?: {
+                [key: string]: unknown;
+            };
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: components["schemas"]["AtlassianEvaluationRequest"];
+        };
+        AtlassianActionAuthorizationResponse: {
+            accepted: boolean;
+            status: string;
+            /** @enum {string} */
+            product: "jira" | "confluence";
+            binding_id?: string;
+            tenant_id?: string;
+            mission_ref?: string;
+            site_url?: string;
+            cloud_id?: string;
+            project_key?: string;
+            issue_key?: string;
+            issue_type?: string;
+            space_key?: string;
+            page_id?: string;
+            page_title?: string;
+            account_id?: string;
+            subject?: string;
+            email?: string;
+            groups?: string[];
+            action?: string;
+            admin: boolean;
+            reason_codes?: string[];
+            human_reason?: string;
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: {
+                [key: string]: unknown;
+            };
+            resolved_at?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CreateSalesforceOrgBindingRequest: {
+            tenant_id?: string;
+            /** @description Salesforce instance URL, for example https://example.my.salesforce.com. */
+            instance_url: string;
+            org_id?: string;
+            org_name?: string;
+            mission_ref: string;
+            allowed_object_api_names?: string[];
+            allowed_record_type_ids?: string[];
+            allowed_record_type_names?: string[];
+            allowed_actions?: ("read_record" | "create_record" | "update_record" | "delete_record" | "upsert_record" | "submit_record")[];
+            required_profiles?: string[];
+            required_permission_sets?: string[];
+            admin_profiles?: string[];
+            admin_permission_sets?: string[];
+            allowed_subjects?: string[];
+            profile_claim?: string;
+            permission_sets_claim?: string;
+            subject_claim?: string;
+            username_claim?: string;
+            email_claim?: string;
+            /** @enum {string} */
+            permission_set_match_mode?: "any" | "all";
+            metadata?: {
+                [key: string]: string;
+            };
+        };
+        SalesforceOrgBinding: {
+            binding_id: string;
+            tenant_id?: string;
+            instance_url: string;
+            org_id?: string;
+            org_name?: string;
+            mission_ref: string;
+            allowed_object_api_names?: string[];
+            allowed_record_type_ids?: string[];
+            allowed_record_type_names?: string[];
+            allowed_actions?: string[];
+            required_profiles?: string[];
+            required_permission_sets?: string[];
+            admin_profiles?: string[];
+            admin_permission_sets?: string[];
+            allowed_subjects?: string[];
+            profile_claim?: string;
+            permission_sets_claim?: string;
+            subject_claim?: string;
+            username_claim?: string;
+            email_claim?: string;
+            permission_set_match_mode?: string;
+            status: string;
+            metadata?: {
+                [key: string]: string;
+            };
+            created_by?: components["schemas"]["Principal"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_resolved_at?: string;
+            last_subject?: string;
+            last_resolution_status?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SalesforceEvaluationRequest: {
+            mission_version_seen?: number;
+            actor: {
+                [key: string]: unknown;
+            };
+            action: {
+                type?: string;
+                name?: string;
+                resource?: {
+                    type: string;
+                    id: string;
+                    channel_id?: string;
+                };
+                operation?: string;
+            } & {
+                [key: string]: unknown;
+            };
+        };
+        AuthorizeSalesforceRecordActionRequest: {
+            tenant_id?: string;
+            mission_ref?: string;
+            instance_url?: string;
+            org_id?: string;
+            object_api_name: string;
+            record_id?: string;
+            record_type_id?: string;
+            record_type_name?: string;
+            user_id?: string;
+            subject?: string;
+            username?: string;
+            email?: string;
+            profile?: string;
+            permission_sets?: string[];
+            /** @enum {string} */
+            action: "read_record" | "create_record" | "update_record" | "delete_record" | "upsert_record" | "submit_record";
+            claims?: {
+                [key: string]: unknown;
+            };
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: components["schemas"]["SalesforceEvaluationRequest"];
+        };
+        SalesforceRecordActionAuthorizationResponse: {
+            accepted: boolean;
+            status: string;
+            binding_id?: string;
+            tenant_id?: string;
+            mission_ref?: string;
+            instance_url?: string;
+            org_id?: string;
+            object_api_name?: string;
+            record_id?: string;
+            record_type_id?: string;
+            record_type_name?: string;
+            user_id?: string;
+            subject?: string;
+            username?: string;
+            email?: string;
+            profile?: string;
+            permission_sets?: string[];
             action?: string;
             admin: boolean;
             reason_codes?: string[];
@@ -2768,6 +3137,177 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SlackMessageAuthorizationResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listAtlassianSiteBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Atlassian site bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        site_bindings: components["schemas"]["AtlassianSiteBinding"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createAtlassianSiteBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAtlassianSiteBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description Atlassian site binding for Jira and Confluence. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AtlassianSiteBinding"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    authorizeAtlassianJiraIssueAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizeAtlassianJiraIssueActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Jira issue authorization response with optional mission evaluation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AtlassianActionAuthorizationResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    authorizeAtlassianConfluencePageAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizeAtlassianConfluencePageActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Confluence page authorization response with optional mission evaluation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AtlassianActionAuthorizationResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listSalesforceOrgBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Salesforce org bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        org_bindings: components["schemas"]["SalesforceOrgBinding"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createSalesforceOrgBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSalesforceOrgBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description Salesforce org binding for record action authorization. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesforceOrgBinding"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    authorizeSalesforceRecordAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizeSalesforceRecordActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Salesforce record authorization response with optional mission evaluation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesforceRecordActionAuthorizationResponse"];
                 };
             };
             default: components["responses"]["Error"];

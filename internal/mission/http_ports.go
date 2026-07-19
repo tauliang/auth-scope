@@ -108,6 +108,12 @@ type AtlassianAPI interface {
 	AuthorizeAtlassianConfluencePageAction(AuthorizeAtlassianConfluencePageActionRequest) (AtlassianActionAuthorizationResponse, error)
 }
 
+type SalesforceAPI interface {
+	CreateSalesforceOrgBinding(CreateSalesforceOrgBindingRequest, Principal) (SalesforceOrgBinding, error)
+	ListSalesforceOrgBindings() ([]SalesforceOrgBinding, error)
+	AuthorizeSalesforceRecordAction(AuthorizeSalesforceRecordActionRequest) (SalesforceRecordActionAuthorizationResponse, error)
+}
+
 type HandlerServices struct {
 	Identity        IdentityAPI
 	Mission         MissionAPI
@@ -121,4 +127,5 @@ type HandlerServices struct {
 	Entra           EntraAPI
 	Slack           SlackAPI
 	Atlassian       AtlassianAPI
+	Salesforce      SalesforceAPI
 }

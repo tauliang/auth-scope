@@ -35,6 +35,7 @@ type Service struct {
 	okta                OktaStore
 	entra               EntraStore
 	slack               SlackStore
+	servicenow          ServiceNowStore
 	clock               Clock
 	artifactKey         []byte
 	githubWebhookSecret []byte
@@ -57,6 +58,7 @@ type ServiceDependencies struct {
 	Okta                OktaStore
 	Entra               EntraStore
 	Slack               SlackStore
+	ServiceNow          ServiceNowStore
 	GovernanceReads     GovernanceReadStore
 	AuthorityGuard      AuthorityGuard
 	ArtifactKey         []byte
@@ -129,6 +131,7 @@ func NewServiceWithDependencies(dependencies ServiceDependencies, clock Clock) *
 		okta:                dependencies.Okta,
 		entra:               dependencies.Entra,
 		slack:               dependencies.Slack,
+		servicenow:          dependencies.ServiceNow,
 		clock:               clock,
 		artifactKey:         dependencies.ArtifactKey,
 		githubWebhookSecret: dependencies.GitHubWebhookSecret,

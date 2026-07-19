@@ -1,0 +1,24 @@
+"filename", "language", "Markdown", "YAML", "Go", "MS SQL", "TypeScript", "comment", "blank", "total"
+"/Users/tau/Git/Hacks/auth-scope/README.md", "Markdown", 46, 0, 0, 0, 0, 0, 4, 50
+"/Users/tau/Git/Hacks/auth-scope/frontend/src/shared/api/generated.ts", "TypeScript", 0, 0, 0, 0, 204, 7, 0, 211
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/http.go", "Go", 0, 0, 5, 0, 0, 0, 0, 5
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/http_ports.go", "Go", 0, 0, 6, 0, 0, 0, 1, 7
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/integrations/okta/helpers.go", "Go", 0, 0, 223, 0, 0, 0, 18, 241
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/integrations/okta/helpers_test.go", "Go", 0, 0, 62, 0, 0, 0, 5, 67
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/integrations/okta/service.go", "Go", 0, 0, 298, 0, 0, 0, 26, 324
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/integrations/okta/types.go", "Go", 0, 0, 127, 0, 0, 0, 16, 143
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/okta.go", "Go", 0, 0, 20, 0, 0, 0, 6, 26
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/okta_http.go", "Go", 0, 0, 65, 0, 0, 0, 6, 71
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/okta_http_test.go", "Go", 0, 0, 77, 0, 0, 0, 7, 84
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/okta_service.go", "Go", 0, 0, 108, 0, 0, 0, 19, 127
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/okta_test.go", "Go", 0, 0, 124, 0, 0, 0, 8, 132
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/ports.go", "Go", 0, 0, 6, 0, 0, 0, 1, 7
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/service.go", "Go", 0, 0, 4, 0, 0, 0, 0, 4
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/store.go", "Go", 0, 0, 68, 0, 0, 0, 4, 72
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/store/migrations/009_okta_integrations.down.sql", "MS SQL", 0, 0, 0, 4, 0, 0, 1, 5
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/store/migrations/009_okta_integrations.up.sql", "MS SQL", 0, 0, 0, 15, 0, 0, 2, 17
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/store/postgres.go", "Go", 0, 0, 104, 0, 0, 4, 15, 123
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/store/postgres_test.go", "Go", 0, 0, 1, 0, 0, 0, 0, 1
+"/Users/tau/Git/Hacks/auth-scope/internal/mission/store/postgres_unit_test.go", "Go", 0, 0, 90, 0, 0, 0, 6, 96
+"/Users/tau/Git/Hacks/auth-scope/openapi/auth-scope-v1.yaml", "YAML", 0, 145, 0, 0, 0, 0, 0, 145
+"Total", "-", 46, 145, 1388, 19, 204, 11, 145, 1958

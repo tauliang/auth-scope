@@ -1029,6 +1029,78 @@ func TestPostgresStoreGitHubIntegrationMethods(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreOktaIntegrationMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	binding := sampleOktaAppBinding()
+	bindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("INSERT INTO okta_app_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.Issuer,
+			binding.ClientID,
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveOktaAppBinding(binding); err != nil {
+		t.Fatalf("SaveOktaAppBinding: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO okta_app_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.Issuer,
+			binding.ClientID,
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveOktaAppBinding(binding); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveOktaAppBinding duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json FROM okta_app_bindings").
+		WithArgs(binding.BindingID).
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(bindingJSON))
+	gotBinding, err := store.GetOktaAppBinding(binding.BindingID)
+	if err != nil {
+		t.Fatalf("GetOktaAppBinding: %v", err)
+	}
+	if gotBinding.BindingID != binding.BindingID {
+		t.Fatalf("GetOktaAppBinding = %#v", gotBinding)
+	}
+
+	binding.LastResolvedAt = testUnitNow()
+	binding.LastSubject = "00u1agent"
+	binding.LastResolutionStatus = mission.OktaResolutionStatusAccepted
+	updatedBindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("UPDATE okta_app_bindings").
+		WithArgs(nullableString(binding.TenantID), binding.Issuer, binding.ClientID, binding.MissionRef, binding.Status, updatedBindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateOktaAppBinding(binding); err != nil {
+		t.Fatalf("UpdateOktaAppBinding: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json").
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(updatedBindingJSON))
+	bindings, err := store.ListOktaAppBindings()
+	if err != nil {
+		t.Fatalf("ListOktaAppBindings: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].ClientID != binding.ClientID {
+		t.Fatalf("ListOktaAppBindings = %#v", bindings)
+	}
+}
+
 func TestPostgresStoreListMethods(t *testing.T) {
 	store, mock, cleanup := newMockPostgresStore(t)
 	defer cleanup()
@@ -1377,6 +1449,30 @@ func sampleGitHubWebhookDelivery() mission.GitHubWebhookDelivery {
 			"event":      "pull_request",
 			"repository": "tauliang/auth-scope",
 		},
+	}
+}
+
+func sampleOktaAppBinding() mission.OktaAppBinding {
+	return mission.OktaAppBinding{
+		BindingID:             "okb_test",
+		TenantID:              "tenant_1",
+		Issuer:                "https://acme.okta.com/oauth2/default",
+		AuthorizationServerID: "default",
+		DiscoveryURL:          "https://acme.okta.com/oauth2/default/.well-known/openid-configuration",
+		JWKSURI:               "https://acme.okta.com/oauth2/default/v1/keys",
+		ClientID:              "0oaabc123client",
+		AppID:                 "0oaapp123",
+		AppLabel:              "Auth Scope Console",
+		MissionRef:            "mref_test",
+		RequiredGroups:        []string{"Mission Operators"},
+		AdminGroups:           []string{"Mission Admins"},
+		GroupClaim:            "groups",
+		SubjectClaim:          "sub",
+		ScopeClaim:            "scp",
+		GroupMatchMode:        mission.OktaGroupMatchAny,
+		Status:                mission.OktaAppBindingStatusActive,
+		CreatedBy:             mission.OktaPrincipal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
+		CreatedAt:             testUnitNow(),
 	}
 }
 

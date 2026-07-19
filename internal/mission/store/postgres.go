@@ -1717,6 +1717,129 @@ func (s *PostgresStore) GetGitHubWebhookDelivery(id string) (mission.GitHubWebho
 	return delivery, nil
 }
 
+// SaveOktaAppBinding saves an Okta application and group mission binding.
+func (s *PostgresStore) SaveOktaAppBinding(binding mission.OktaAppBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal okta app binding: %w", err)
+	}
+	createdAt := binding.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SaveOktaAppBinding", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO okta_app_bindings (
+			id, tenant_id, issuer, client_id, mission_ref, status, binding_json, created_at, last_resolved_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, binding.BindingID, nullableString(binding.TenantID), binding.Issuer, binding.ClientID, binding.MissionRef, binding.Status, bindingJSON, createdAt, nullableTime(binding.LastResolvedAt))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert okta app binding: %w", err)
+	}
+	return nil
+}
+
+// GetOktaAppBinding retrieves an Okta application and group mission binding.
+func (s *PostgresStore) GetOktaAppBinding(id string) (mission.OktaAppBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetOktaAppBinding", startTime)
+
+	var bindingJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT binding_json FROM okta_app_bindings WHERE id = $1`, id).Scan(&bindingJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.OktaAppBinding{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.OktaAppBinding{}, fmt.Errorf("query okta app binding: %w", err)
+	}
+	var binding mission.OktaAppBinding
+	if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+		return mission.OktaAppBinding{}, fmt.Errorf("unmarshal okta app binding: %w", err)
+	}
+	return binding, nil
+}
+
+// UpdateOktaAppBinding updates an Okta application and group mission binding.
+func (s *PostgresStore) UpdateOktaAppBinding(binding mission.OktaAppBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal okta app binding: %w", err)
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("UpdateOktaAppBinding", startTime)
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE okta_app_bindings SET
+			tenant_id = $1,
+			issuer = $2,
+			client_id = $3,
+			mission_ref = $4,
+			status = $5,
+			binding_json = $6,
+			last_resolved_at = $7
+		WHERE id = $8
+	`, nullableString(binding.TenantID), binding.Issuer, binding.ClientID, binding.MissionRef, binding.Status, bindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("update okta app binding: %w", err)
+	}
+	return rowsAffectedErr(result)
+}
+
+// ListOktaAppBindings lists Okta application and group mission bindings.
+func (s *PostgresStore) ListOktaAppBindings() ([]mission.OktaAppBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListOktaAppBindings", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT binding_json
+		FROM okta_app_bindings
+		ORDER BY issuer ASC, client_id ASC, created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query okta app bindings: %w", err)
+	}
+	defer rows.Close()
+
+	bindings := make([]mission.OktaAppBinding, 0)
+	for rows.Next() {
+		var bindingJSON []byte
+		if err := rows.Scan(&bindingJSON); err != nil {
+			return nil, fmt.Errorf("scan okta app binding: %w", err)
+		}
+		var binding mission.OktaAppBinding
+		if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+			return nil, fmt.Errorf("unmarshal okta app binding: %w", err)
+		}
+		bindings = append(bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate okta app bindings: %w", err)
+	}
+	return bindings, nil
+}
+
 // AppendEvent appends an event and stages it in the outbox in one transaction.
 func (s *PostgresStore) AppendEvent(event mission.Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

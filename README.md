@@ -22,6 +22,8 @@ The first slice is intentionally small and runnable:
 - Authority negotiation for safe subset counteroffers before expansion
 - Containment rules with blast-radius inspection and fail-closed enforcement
 - Mission and agent lineage graphs for accountability tracing
+- GitHub repository and check-run integration hooks for coding-agent PR governance
+- Okta application/group binding and claim-to-authority context resolution
 - Resume checks for agent harnesses
 - Strict-subset delegation for child missions
 - Cascade revocation/completion semantics
@@ -53,7 +55,7 @@ Run the API locally without Docker:
 go run ./cmd/auth-scope
 ```
 
-The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts and projection tokens are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set. GitHub webhooks are verified with `AUTH_SCOPE_GITHUB_WEBHOOK_SECRET` or `GITHUB_WEBHOOK_SECRET` when the GitHub integration endpoints are enabled.
+The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts and projection tokens are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set. GitHub webhooks are verified with `AUTH_SCOPE_GITHUB_WEBHOOK_SECRET` or `GITHUB_WEBHOOK_SECRET` when the GitHub integration endpoints are enabled. Okta bindings resolve already-verified Okta OIDC claims into mission authority context and do not require a live Okta network dependency in the runtime hot path.
 
 Set `AUTH_SCOPE_MODE=production` or `AUTH_SCOPE_ENV=production` for fail-closed startup checks. Production mode requires `DATABASE_URL`, explicit administrator credentials, and a non-placeholder `AUTH_SCOPE_DECISION_SECRET` of at least 32 characters. The production binary also requires signed agent requests on runtime authority endpoints such as mission evaluation, AuthZEN evaluation, delegation, projections, leases, and tool-call authorization.
 
@@ -183,6 +185,9 @@ POST /v1/integrations/github/repositories
 GET  /v1/integrations/github/repositories
 POST /v1/integrations/github/webhooks
 POST /v1/integrations/github/check-runs/plan
+POST /v1/integrations/okta/app-bindings
+GET  /v1/integrations/okta/app-bindings
+POST /v1/integrations/okta/authority-context/resolve
 POST /v1/missions/{mission_ref}/leases
 POST /v1/leases/{lease_id}/refresh
 POST /v1/approval-rules
@@ -465,6 +470,51 @@ curl -s http://localhost:8080/v1/integrations/github/check-runs/plan \
 
 GitHub webhook requests should be sent to `/v1/integrations/github/webhooks` with `X-GitHub-Event`, `X-GitHub-Delivery`, and `X-Hub-Signature-256`. The service records signed deliveries as audit events and links them to a repository binding when one exists.
 
+Bind an Okta OIDC application and group allowlist to a mission so an identity-aware gateway can convert verified Okta claims into canonical mission-authority context:
+
+```sh
+curl -s http://localhost:8080/v1/integrations/okta/app-bindings \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
+  -d '{
+    "tenant_id": "demo",
+    "issuer": "https://acme.okta.com/oauth2/default",
+    "client_id": "0oaabc123client",
+    "app_id": "0oaapp123",
+    "app_label": "Auth Scope Console",
+    "mission_ref": "{mission_ref}",
+    "required_groups": ["Mission Operators"],
+    "admin_groups": ["Mission Admins"],
+    "group_match_mode": "any"
+  }'
+```
+
+After a gateway verifies the Okta token signature and audience, it can resolve the token claims and optionally ask for a mission decision in the same call:
+
+```sh
+curl -s http://localhost:8080/v1/integrations/okta/authority-context/resolve \
+  -H 'content-type: application/json' \
+  -d '{
+    "claims": {
+      "iss": "https://acme.okta.com/oauth2/default",
+      "cid": "0oaabc123client",
+      "sub": "00u1agent",
+      "groups": ["Mission Operators"],
+      "scp": ["openid", "groups"]
+    },
+    "context": {"risk": "low", "reversible": true},
+    "evaluation": {
+      "mission_version_seen": 1,
+      "actor": {"agent_instance_id": "inst_123", "client_id": "research-agent"},
+      "action": {
+        "type": "tool_call",
+        "resource": {"type": "drive_folder", "id": "board"},
+        "operation": "read"
+      }
+    }
+  }'
+```
+
 Create a containment rule during an incident. Active containment blocks evaluation, manual expansion, delegation, projection issuance/verification, lease creation/refresh, and resume when the mission, tenant, agent, principal, tool, or resource matches:
 
 ```sh
@@ -511,4 +561,4 @@ curl -s http://localhost:8080/access/v1/evaluation \
 
 ## MVP Boundary
 
-This branch now includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, and GitHub repository/check-run integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.
+This branch now includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, GitHub repository/check-run integration hooks, and Okta app/group authority-context integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, adding live JWKS/introspection verification where the gateway does not already verify Okta tokens, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.

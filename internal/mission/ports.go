@@ -73,6 +73,13 @@ type GitHubStore interface {
 	GetGitHubWebhookDelivery(string) (GitHubWebhookDelivery, error)
 }
 
+type OktaStore interface {
+	SaveOktaAppBinding(OktaAppBinding) error
+	GetOktaAppBinding(string) (OktaAppBinding, error)
+	UpdateOktaAppBinding(OktaAppBinding) error
+	ListOktaAppBindings() ([]OktaAppBinding, error)
+}
+
 type ExpansionDecisionStore interface {
 	CommitExpansionDecision(context.Context, ExpansionDecisionCommit) error
 }

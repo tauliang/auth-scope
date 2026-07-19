@@ -112,6 +112,31 @@ func TestMemoryStoreIntegrationBindingsAreSortedAndConflictChecked(t *testing.T)
 	if atlassianList[0].BindingID != "atl-1" || atlassianList[1].BindingID != "atl-2" {
 		t.Fatalf("Atlassian bindings not sorted: %#v", atlassianList)
 	}
+	gotAtlassian, err := store.GetAtlassianSiteBinding(atlassianOne.BindingID)
+	if err != nil {
+		t.Fatalf("GetAtlassianSiteBinding: %v", err)
+	}
+	if gotAtlassian.SiteURL != atlassianOne.SiteURL {
+		t.Fatalf("GetAtlassianSiteBinding site URL = %q, want %q", gotAtlassian.SiteURL, atlassianOne.SiteURL)
+	}
+	updatedAtlassian := atlassianOne
+	updatedAtlassian.SiteName = "Acme Atlassian"
+	if err := store.UpdateAtlassianSiteBinding(updatedAtlassian); err != nil {
+		t.Fatalf("UpdateAtlassianSiteBinding: %v", err)
+	}
+	gotAtlassian, err = store.GetAtlassianSiteBinding(atlassianOne.BindingID)
+	if err != nil {
+		t.Fatalf("GetAtlassianSiteBinding updated: %v", err)
+	}
+	if gotAtlassian.SiteName != "Acme Atlassian" {
+		t.Fatalf("GetAtlassianSiteBinding site name = %q, want Acme Atlassian", gotAtlassian.SiteName)
+	}
+	if _, err := store.GetAtlassianSiteBinding("missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetAtlassianSiteBinding missing err = %v, want ErrNotFound", err)
+	}
+	if err := store.UpdateAtlassianSiteBinding(AtlassianSiteBinding{BindingID: "missing"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateAtlassianSiteBinding missing err = %v, want ErrNotFound", err)
+	}
 	if err := store.SaveAtlassianSiteBinding(AtlassianSiteBinding{BindingID: "atl-3", TenantID: atlassianOne.TenantID, SiteURL: atlassianOne.SiteURL, MissionRef: atlassianOne.MissionRef, Status: AtlassianSiteBindingStatusActive}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("SaveAtlassianSiteBinding duplicate site err = %v, want ErrConflict", err)
 	}
@@ -133,6 +158,31 @@ func TestMemoryStoreIntegrationBindingsAreSortedAndConflictChecked(t *testing.T)
 	}
 	if salesforceList[0].BindingID != "sf-1" || salesforceList[1].BindingID != "sf-2" {
 		t.Fatalf("Salesforce bindings not sorted: %#v", salesforceList)
+	}
+	gotSalesforce, err := store.GetSalesforceOrgBinding(salesforceOne.BindingID)
+	if err != nil {
+		t.Fatalf("GetSalesforceOrgBinding: %v", err)
+	}
+	if gotSalesforce.InstanceURL != salesforceOne.InstanceURL {
+		t.Fatalf("GetSalesforceOrgBinding instance URL = %q, want %q", gotSalesforce.InstanceURL, salesforceOne.InstanceURL)
+	}
+	updatedSalesforce := salesforceOne
+	updatedSalesforce.OrgName = "Acme Salesforce"
+	if err := store.UpdateSalesforceOrgBinding(updatedSalesforce); err != nil {
+		t.Fatalf("UpdateSalesforceOrgBinding: %v", err)
+	}
+	gotSalesforce, err = store.GetSalesforceOrgBinding(salesforceOne.BindingID)
+	if err != nil {
+		t.Fatalf("GetSalesforceOrgBinding updated: %v", err)
+	}
+	if gotSalesforce.OrgName != "Acme Salesforce" {
+		t.Fatalf("GetSalesforceOrgBinding org name = %q, want Acme Salesforce", gotSalesforce.OrgName)
+	}
+	if _, err := store.GetSalesforceOrgBinding("missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetSalesforceOrgBinding missing err = %v, want ErrNotFound", err)
+	}
+	if err := store.UpdateSalesforceOrgBinding(SalesforceOrgBinding{BindingID: "missing"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateSalesforceOrgBinding missing err = %v, want ErrNotFound", err)
 	}
 	if err := store.SaveSalesforceOrgBinding(SalesforceOrgBinding{BindingID: "sf-3", TenantID: salesforceOne.TenantID, InstanceURL: salesforceOne.InstanceURL, MissionRef: salesforceOne.MissionRef, Status: SalesforceOrgBindingStatusActive}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("SaveSalesforceOrgBinding duplicate instance err = %v, want ErrConflict", err)

@@ -284,3 +284,101 @@ func TestServiceNowValidationAndErrorPaths(t *testing.T) {
 		t.Fatalf("delete store err = %v, want wrapped store error", err)
 	}
 }
+
+func TestServiceNowResolveAuthorityContextDeniesAndParsesClaims(t *testing.T) {
+	store := newMemoryStore()
+	events := &eventSink{}
+	service := newTestService(store, nil, events)
+
+	denied, err := service.ResolveAuthorityContext(ResolveAuthorityContextRequest{
+		TenantID:   "demo",
+		MissionRef: "mref_missing",
+		Subject:    " agent@example.com ",
+		Groups:     []string{" Mission Operators ", "", "mission operators"},
+		Context:    map[string]any{"sys_id": " sys_404 "},
+	})
+	if err != nil {
+		t.Fatalf("ResolveAuthorityContext no binding: %v", err)
+	}
+	if denied.Accepted || denied.Status != ResolutionStatusDenied || !containsString(denied.ReasonCodes, "servicenow_no_matching_binding") {
+		t.Fatalf("no-match response = %#v, want denied no matching binding", denied)
+	}
+	if denied.Subject != "agent@example.com" || len(denied.Groups) != 1 || denied.Groups[0] != "Mission Operators" {
+		t.Fatalf("no-match identity context = %#v, want trimmed subject and deduplicated groups", denied)
+	}
+
+	binding := TicketBinding{
+		BindingID:        "snb_1",
+		TenantID:         "demo",
+		InstanceURL:      "https://acme.service-now.com",
+		ServiceNowSysID:  "sys_123",
+		ServiceNowNumber: "CHG0010001",
+		State:            "new",
+		MissionRef:       "mref_123",
+		RequiredGroups:   []string{"CAB", "Approvers"},
+		AdminGroups:      []string{"Admins"},
+		AllowedSubjects:  []string{"allowed@example.com"},
+		GroupClaim:       "roles",
+		SubjectClaim:     "user",
+		GroupMatchMode:   "all",
+		Status:           TicketBindingStatusActive,
+	}
+	store.bindings[binding.BindingID] = binding
+
+	denied, err = service.ResolveAuthorityContext(ResolveAuthorityContextRequest{
+		TenantID:   "demo",
+		MissionRef: "mref_123",
+		Claims: map[string]any{
+			"user":  " other@example.com ",
+			"roles": "CAB Admins",
+		},
+		Context: map[string]any{"servicenow_sys_id": " sys_123 "},
+	})
+	if err != nil {
+		t.Fatalf("ResolveAuthorityContext denied binding: %v", err)
+	}
+	if denied.Accepted || denied.BindingID != binding.BindingID {
+		t.Fatalf("binding denial response = %#v, want denied bound response", denied)
+	}
+	if !containsString(denied.ReasonCodes, "servicenow_subject_not_allowed") || !containsString(denied.ReasonCodes, "servicenow_required_group_missing") {
+		t.Fatalf("binding denial reasons = %#v, want subject and group failures", denied.ReasonCodes)
+	}
+	if store.bindings[binding.BindingID].LastResolutionStatus != ResolutionStatusDenied {
+		t.Fatalf("binding resolution status = %q, want denied", store.bindings[binding.BindingID].LastResolutionStatus)
+	}
+	if len(events.events) != 1 || events.events[0].Type != "servicenow.authority_context_resolved" {
+		t.Fatalf("denial event not emitted: %#v", events.events)
+	}
+
+	binding.AllowedSubjects = nil
+	store.bindings[binding.BindingID] = binding
+	accepted, err := service.ResolveAuthorityContext(ResolveAuthorityContextRequest{
+		TenantID:   "demo",
+		MissionRef: "mref_123",
+		Claims: map[string]any{
+			"user":  " allowed@example.com ",
+			"roles": []string{"CAB", "Approvers", "Admins"},
+		},
+		Context: map[string]any{"servicenow.sys_id": " sys_123 "},
+	})
+	if err != nil {
+		t.Fatalf("ResolveAuthorityContext accepted binding: %v", err)
+	}
+	if !accepted.Accepted || !accepted.Admin || accepted.Subject != "allowed@example.com" {
+		t.Fatalf("accepted response = %#v, want admin authority context from claims", accepted)
+	}
+	if accepted.Context["servicenow.sys_id"] != "sys_123" || accepted.Context["servicenow.number"] != "CHG0010001" {
+		t.Fatalf("accepted context = %#v, want ServiceNow metadata", accepted.Context)
+	}
+}
+
+func TestServiceNowIsConflictClassifier(t *testing.T) {
+	conflict := errors.New("conflict")
+	classifier := IsConflict(conflict)
+	if !classifier(conflict) {
+		t.Fatalf("classifier returned false for configured conflict error")
+	}
+	if classifier(errors.New("other")) {
+		t.Fatalf("classifier returned true for unrelated error")
+	}
+}

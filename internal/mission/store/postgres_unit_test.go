@@ -1243,6 +1243,150 @@ func TestPostgresStoreSlackIntegrationMethods(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreAtlassianIntegrationMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	binding := sampleAtlassianSiteBinding()
+	bindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("INSERT INTO atlassian_site_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.SiteURL,
+			nullableString(binding.CloudID),
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveAtlassianSiteBinding(binding); err != nil {
+		t.Fatalf("SaveAtlassianSiteBinding: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO atlassian_site_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.SiteURL,
+			nullableString(binding.CloudID),
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveAtlassianSiteBinding(binding); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveAtlassianSiteBinding duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json FROM atlassian_site_bindings").
+		WithArgs(binding.BindingID).
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(bindingJSON))
+	gotBinding, err := store.GetAtlassianSiteBinding(binding.BindingID)
+	if err != nil {
+		t.Fatalf("GetAtlassianSiteBinding: %v", err)
+	}
+	if gotBinding.BindingID != binding.BindingID {
+		t.Fatalf("GetAtlassianSiteBinding = %#v", gotBinding)
+	}
+
+	binding.LastResolvedAt = testUnitNow()
+	binding.LastSubject = "agent@example.com"
+	binding.LastResolutionStatus = mission.AtlassianResolutionStatusAccepted
+	updatedBindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("UPDATE atlassian_site_bindings SET").
+		WithArgs(nullableString(binding.TenantID), binding.SiteURL, nullableString(binding.CloudID), binding.MissionRef, binding.Status, updatedBindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateAtlassianSiteBinding(binding); err != nil {
+		t.Fatalf("UpdateAtlassianSiteBinding: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json").
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(updatedBindingJSON))
+	bindings, err := store.ListAtlassianSiteBindings()
+	if err != nil {
+		t.Fatalf("ListAtlassianSiteBindings: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].SiteURL != binding.SiteURL {
+		t.Fatalf("ListAtlassianSiteBindings = %#v", bindings)
+	}
+}
+
+func TestPostgresStoreSalesforceIntegrationMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	binding := sampleSalesforceOrgBinding()
+	bindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("INSERT INTO salesforce_org_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.InstanceURL,
+			nullableString(binding.OrgID),
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveSalesforceOrgBinding(binding); err != nil {
+		t.Fatalf("SaveSalesforceOrgBinding: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO salesforce_org_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.InstanceURL,
+			nullableString(binding.OrgID),
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveSalesforceOrgBinding(binding); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveSalesforceOrgBinding duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json FROM salesforce_org_bindings").
+		WithArgs(binding.BindingID).
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(bindingJSON))
+	gotBinding, err := store.GetSalesforceOrgBinding(binding.BindingID)
+	if err != nil {
+		t.Fatalf("GetSalesforceOrgBinding: %v", err)
+	}
+	if gotBinding.BindingID != binding.BindingID {
+		t.Fatalf("GetSalesforceOrgBinding = %#v", gotBinding)
+	}
+
+	binding.LastResolvedAt = testUnitNow()
+	binding.LastSubject = "agent@example.com"
+	binding.LastResolutionStatus = mission.SalesforceResolutionStatusAccepted
+	updatedBindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("UPDATE salesforce_org_bindings SET").
+		WithArgs(nullableString(binding.TenantID), binding.InstanceURL, nullableString(binding.OrgID), binding.MissionRef, binding.Status, updatedBindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateSalesforceOrgBinding(binding); err != nil {
+		t.Fatalf("UpdateSalesforceOrgBinding: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json").
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(updatedBindingJSON))
+	bindings, err := store.ListSalesforceOrgBindings()
+	if err != nil {
+		t.Fatalf("ListSalesforceOrgBindings: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].InstanceURL != binding.InstanceURL {
+		t.Fatalf("ListSalesforceOrgBindings = %#v", bindings)
+	}
+}
+
 func TestPostgresStoreListMethods(t *testing.T) {
 	store, mock, cleanup := newMockPostgresStore(t)
 	defer cleanup()
@@ -1662,6 +1806,62 @@ func sampleSlackWorkspaceBinding() mission.SlackWorkspaceBinding {
 		Metadata:        map[string]string{"environment": "production"},
 		CreatedBy:       mission.SlackPrincipal{UserID: "admin@example.com"},
 		CreatedAt:       testUnitNow(),
+	}
+}
+
+func sampleAtlassianSiteBinding() mission.AtlassianSiteBinding {
+	return mission.AtlassianSiteBinding{
+		BindingID:            "atb_test",
+		TenantID:             "tenant_1",
+		SiteURL:              "https://acme.atlassian.net",
+		CloudID:              "cloud-acme",
+		SiteName:             "Acme Atlassian",
+		MissionRef:           "mref_test",
+		JiraProjectKeys:      []string{"FIN"},
+		ConfluenceSpaceKeys:  []string{"ENG"},
+		AllowedJiraActions:   []string{mission.AtlassianJiraActionTransitionIssue},
+		AllowedPageActions:   []string{mission.AtlassianConfluenceActionUpdatePage},
+		RequiredGroups:       []string{"Mission Operators"},
+		AdminGroups:          []string{"Mission Admins"},
+		AllowedSubjects:      []string{"agent@example.com"},
+		GroupClaim:           "groups",
+		SubjectClaim:         "sub",
+		EmailClaim:           "email",
+		GroupMatchMode:       mission.AtlassianGroupMatchAny,
+		Status:               mission.AtlassianSiteBindingStatusActive,
+		Metadata:             map[string]string{"environment": "production"},
+		CreatedBy:            mission.AtlassianPrincipal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
+		CreatedAt:            testUnitNow(),
+		LastResolutionStatus: mission.AtlassianResolutionStatusDenied,
+	}
+}
+
+func sampleSalesforceOrgBinding() mission.SalesforceOrgBinding {
+	return mission.SalesforceOrgBinding{
+		BindingID:              "sfb_test",
+		TenantID:               "tenant_1",
+		InstanceURL:            "https://acme.my.salesforce.com",
+		OrgID:                  "00Dxx0000001ABC",
+		OrgName:                "Acme Salesforce",
+		MissionRef:             "mref_test",
+		AllowedObjectAPINames:  []string{"Account"},
+		AllowedRecordTypeNames: []string{"Customer"},
+		AllowedActions:         []string{mission.SalesforceActionUpdateRecord},
+		RequiredProfiles:       []string{"Standard User"},
+		RequiredPermissionSets: []string{"CRM Agent"},
+		AdminPermissionSets:    []string{"Mission Admin"},
+		AllowedSubjects:        []string{"agent@example.com"},
+		ProfileClaim:           "profile",
+		PermissionSetsClaim:    "permission_sets",
+		SubjectClaim:           "sub",
+		UsernameClaim:          "username",
+		EmailClaim:             "email",
+		PermissionSetMatchMode: mission.SalesforcePermissionMatchAny,
+		Status:                 mission.SalesforceOrgBindingStatusActive,
+		Metadata:               map[string]string{"environment": "production"},
+		CreatedBy:              mission.SalesforcePrincipal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
+		CreatedAt:              testUnitNow(),
+		LastResolutionStatus:   mission.SalesforceResolutionStatusDenied,
 	}
 }
 

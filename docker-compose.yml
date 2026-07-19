@@ -24,6 +24,7 @@ services:
     environment:
       AUTH_SCOPE_ADDR: ":8080"
       AUTH_SCOPE_DECISION_SECRET: "dev-compose-decision-secret-change-me"
+      AUTH_SCOPE_GITHUB_WEBHOOK_SECRET: "dev-compose-github-webhook-secret"
       AUTH_SCOPE_ADMIN_CREDENTIALS: '[{"token":"dev-compose-admin-alice","subject":"alice@example.com","issuer":"https://idp.example.com"},{"token":"dev-compose-admin-bob","subject":"bob@example.com","issuer":"https://idp.example.com"}]'
       DATABASE_URL: "postgres://authscope:authscope@postgres:5432/authscope?sslmode=disable"
     ports:

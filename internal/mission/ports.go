@@ -64,6 +64,15 @@ type ContainmentStore interface {
 	ListContainmentRules() ([]ContainmentRule, error)
 }
 
+type GitHubStore interface {
+	SaveGitHubRepositoryBinding(GitHubRepositoryBinding) error
+	GetGitHubRepositoryBinding(string) (GitHubRepositoryBinding, error)
+	UpdateGitHubRepositoryBinding(GitHubRepositoryBinding) error
+	ListGitHubRepositoryBindings() ([]GitHubRepositoryBinding, error)
+	SaveGitHubWebhookDelivery(GitHubWebhookDelivery) error
+	GetGitHubWebhookDelivery(string) (GitHubWebhookDelivery, error)
+}
+
 type ExpansionDecisionStore interface {
 	CommitExpansionDecision(context.Context, ExpansionDecisionCommit) error
 }

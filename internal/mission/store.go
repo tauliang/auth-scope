@@ -38,6 +38,7 @@ type Store interface {
 	ApprovalStore
 	NegotiationStore
 	ContainmentStore
+	GitHubStore
 	ExpansionDecisionStore
 	ProposalApprovalStore
 	EventStore
@@ -46,38 +47,42 @@ type Store interface {
 }
 
 type MemoryStore struct {
-	mu            sync.RWMutex
-	agents        map[string]AgentIdentity
-	nonces        map[string]AgentNonce
-	proposals     map[string]MissionProposal
-	missions      map[string]Mission
-	expansions    map[string]ExpansionRequest
-	evidence      map[string]EvaluationEvidence
-	toolContracts map[string]ToolContract
-	projections   map[string]Projection
-	leases        map[string]MissionLease
-	approvalRules map[string]ApprovalRule
-	approvals     map[string][]ApprovalRecord
-	negotiations  map[string]AuthorityNegotiation
-	containments  map[string]ContainmentRule
-	events        []Event
+	mu               sync.RWMutex
+	agents           map[string]AgentIdentity
+	nonces           map[string]AgentNonce
+	proposals        map[string]MissionProposal
+	missions         map[string]Mission
+	expansions       map[string]ExpansionRequest
+	evidence         map[string]EvaluationEvidence
+	toolContracts    map[string]ToolContract
+	projections      map[string]Projection
+	leases           map[string]MissionLease
+	approvalRules    map[string]ApprovalRule
+	approvals        map[string][]ApprovalRecord
+	negotiations     map[string]AuthorityNegotiation
+	containments     map[string]ContainmentRule
+	githubBindings   map[string]GitHubRepositoryBinding
+	githubDeliveries map[string]GitHubWebhookDelivery
+	events           []Event
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		agents:        make(map[string]AgentIdentity),
-		nonces:        make(map[string]AgentNonce),
-		proposals:     make(map[string]MissionProposal),
-		missions:      make(map[string]Mission),
-		expansions:    make(map[string]ExpansionRequest),
-		evidence:      make(map[string]EvaluationEvidence),
-		toolContracts: make(map[string]ToolContract),
-		projections:   make(map[string]Projection),
-		leases:        make(map[string]MissionLease),
-		approvalRules: make(map[string]ApprovalRule),
-		approvals:     make(map[string][]ApprovalRecord),
-		negotiations:  make(map[string]AuthorityNegotiation),
-		containments:  make(map[string]ContainmentRule),
+		agents:           make(map[string]AgentIdentity),
+		nonces:           make(map[string]AgentNonce),
+		proposals:        make(map[string]MissionProposal),
+		missions:         make(map[string]Mission),
+		expansions:       make(map[string]ExpansionRequest),
+		evidence:         make(map[string]EvaluationEvidence),
+		toolContracts:    make(map[string]ToolContract),
+		projections:      make(map[string]Projection),
+		leases:           make(map[string]MissionLease),
+		approvalRules:    make(map[string]ApprovalRule),
+		approvals:        make(map[string][]ApprovalRecord),
+		negotiations:     make(map[string]AuthorityNegotiation),
+		containments:     make(map[string]ContainmentRule),
+		githubBindings:   make(map[string]GitHubRepositoryBinding),
+		githubDeliveries: make(map[string]GitHubWebhookDelivery),
 	}
 }
 
@@ -642,6 +647,86 @@ func (s *MemoryStore) ListContainmentRules() ([]ContainmentRule, error) {
 		return 0
 	})
 	return rules, nil
+}
+
+func (s *MemoryStore) SaveGitHubRepositoryBinding(binding GitHubRepositoryBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.githubBindings[binding.BindingID]; ok {
+		return ErrConflict
+	}
+	for _, existing := range s.githubBindings {
+		if existing.Status == GitHubRepositoryBindingStatusActive && existing.Repository == binding.Repository {
+			return ErrConflict
+		}
+	}
+	s.githubBindings[binding.BindingID] = binding
+	return nil
+}
+
+func (s *MemoryStore) GetGitHubRepositoryBinding(id string) (GitHubRepositoryBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	binding, ok := s.githubBindings[id]
+	if !ok {
+		return GitHubRepositoryBinding{}, ErrNotFound
+	}
+	return binding, nil
+}
+
+func (s *MemoryStore) UpdateGitHubRepositoryBinding(binding GitHubRepositoryBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.githubBindings[binding.BindingID]; !ok {
+		return ErrNotFound
+	}
+	s.githubBindings[binding.BindingID] = binding
+	return nil
+}
+
+func (s *MemoryStore) ListGitHubRepositoryBindings() ([]GitHubRepositoryBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	bindings := make([]GitHubRepositoryBinding, 0, len(s.githubBindings))
+	for _, binding := range s.githubBindings {
+		bindings = append(bindings, binding)
+	}
+	slices.SortFunc(bindings, func(a, b GitHubRepositoryBinding) int {
+		if a.Repository < b.Repository {
+			return -1
+		}
+		if a.Repository > b.Repository {
+			return 1
+		}
+		if a.BindingID < b.BindingID {
+			return -1
+		}
+		if a.BindingID > b.BindingID {
+			return 1
+		}
+		return 0
+	})
+	return bindings, nil
+}
+
+func (s *MemoryStore) SaveGitHubWebhookDelivery(delivery GitHubWebhookDelivery) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.githubDeliveries[delivery.DeliveryID]; ok {
+		return ErrConflict
+	}
+	s.githubDeliveries[delivery.DeliveryID] = delivery
+	return nil
+}
+
+func (s *MemoryStore) GetGitHubWebhookDelivery(id string) (GitHubWebhookDelivery, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	delivery, ok := s.githubDeliveries[id]
+	if !ok {
+		return GitHubWebhookDelivery{}, ErrNotFound
+	}
+	return delivery, nil
 }
 
 func (s *MemoryStore) AppendEvent(event Event) error {

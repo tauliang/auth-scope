@@ -28,6 +28,17 @@ func ArtifactKeyFromEnv(production bool) ([]byte, error) {
 	return []byte(secret), nil
 }
 
+func GitHubWebhookSecretFromEnv() []byte {
+	secret := strings.TrimSpace(os.Getenv("AUTH_SCOPE_GITHUB_WEBHOOK_SECRET"))
+	if secret == "" {
+		secret = strings.TrimSpace(os.Getenv("GITHUB_WEBHOOK_SECRET"))
+	}
+	if secret == "" {
+		return nil
+	}
+	return []byte(secret)
+}
+
 func weakArtifactSecret(secret string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(secret))
 	return len(secret) < 32 ||

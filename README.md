@@ -53,7 +53,7 @@ Run the API locally without Docker:
 go run ./cmd/auth-scope
 ```
 
-The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts and projection tokens are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set.
+The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts and projection tokens are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set. GitHub webhooks are verified with `AUTH_SCOPE_GITHUB_WEBHOOK_SECRET` or `GITHUB_WEBHOOK_SECRET` when the GitHub integration endpoints are enabled.
 
 Set `AUTH_SCOPE_MODE=production` or `AUTH_SCOPE_ENV=production` for fail-closed startup checks. Production mode requires `DATABASE_URL`, explicit administrator credentials, and a non-placeholder `AUTH_SCOPE_DECISION_SECRET` of at least 32 characters. The production binary also requires signed agent requests on runtime authority endpoints such as mission evaluation, AuthZEN evaluation, delegation, projections, leases, and tool-call authorization.
 
@@ -179,6 +179,10 @@ POST /v1/missions/{mission_ref}/projections
 GET  /v1/projections/{projection_id}/status
 POST /v1/projections/{projection_id}/revoke
 POST /v1/projections/verify
+POST /v1/integrations/github/repositories
+GET  /v1/integrations/github/repositories
+POST /v1/integrations/github/webhooks
+POST /v1/integrations/github/check-runs/plan
 POST /v1/missions/{mission_ref}/leases
 POST /v1/leases/{lease_id}/refresh
 POST /v1/approval-rules
@@ -408,6 +412,59 @@ curl -N http://localhost:8080/v1/events/stream \
   -H "authorization: Bearer ${ADMIN_TOKEN}"
 ```
 
+Bind a GitHub repository to a mission so a GitHub App or Action can publish mission-authority checks on pull requests:
+
+```sh
+curl -s http://localhost:8080/v1/integrations/github/repositories \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
+  -d '{
+    "tenant_id": "demo",
+    "repository": "tauliang/auth-scope",
+    "mission_ref": "{mission_ref}",
+    "default_branch": "main",
+    "required_checks": ["Auth Scope Mission Authority"]
+  }'
+```
+
+Create mission authority for repository paths with `repo_path` resources. Prefix grants support `/**`, which is useful for coding-agent PRs:
+
+```json
+{
+  "authority_region": {
+    "resources": [
+      {
+        "type": "repo_path",
+        "id": "tauliang/auth-scope:frontend/**",
+        "actions": ["edit"]
+      }
+    ],
+    "forbidden_actions": ["delete", "deploy_production"]
+  }
+}
+```
+
+An integration worker can ask Auth Scope for the check-run payload to publish to GitHub:
+
+```sh
+curl -s http://localhost:8080/v1/integrations/github/check-runs/plan \
+  -H 'content-type: application/json' \
+  -d '{
+    "mission_version_seen": 1,
+    "actor": {"agent_instance_id": "inst_123", "client_id": "research-agent"},
+    "repository": "tauliang/auth-scope",
+    "head_sha": "abc123",
+    "pull_request": 42,
+    "branch": "agent/fix-filter",
+    "changed_files": [
+      {"path": "frontend/src/features/missions/MissionDetailPage.tsx", "status": "modified"}
+    ],
+    "context": {"risk": "low", "reversible": true}
+  }'
+```
+
+GitHub webhook requests should be sent to `/v1/integrations/github/webhooks` with `X-GitHub-Event`, `X-GitHub-Delivery`, and `X-Hub-Signature-256`. The service records signed deliveries as audit events and links them to a repository binding when one exists.
+
 Create a containment rule during an incident. Active containment blocks evaluation, manual expansion, delegation, projection issuance/verification, lease creation/refresh, and resume when the mission, tenant, agent, principal, tool, or resource matches:
 
 ```sh
@@ -454,4 +511,4 @@ curl -s http://localhost:8080/access/v1/evaluation \
 
 ## MVP Boundary
 
-This branch now includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, and mission/agent lineage graphs. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.
+This branch now includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, and GitHub repository/check-run integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.

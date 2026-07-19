@@ -1533,6 +1533,190 @@ func (s *PostgresStore) ListContainmentRules() ([]mission.ContainmentRule, error
 	return rules, nil
 }
 
+// SaveGitHubRepositoryBinding saves a GitHub repository integration binding.
+func (s *PostgresStore) SaveGitHubRepositoryBinding(binding mission.GitHubRepositoryBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal github repository binding: %w", err)
+	}
+	createdAt := binding.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SaveGitHubRepositoryBinding", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO github_repository_bindings (
+			id, tenant_id, repository, status, binding_json, created_at, last_webhook_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, binding.BindingID, nullableString(binding.TenantID), binding.Repository, binding.Status, bindingJSON, createdAt, nullableTime(binding.LastWebhookAt))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert github repository binding: %w", err)
+	}
+	return nil
+}
+
+// GetGitHubRepositoryBinding retrieves a GitHub repository integration binding.
+func (s *PostgresStore) GetGitHubRepositoryBinding(id string) (mission.GitHubRepositoryBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetGitHubRepositoryBinding", startTime)
+
+	var bindingJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT binding_json FROM github_repository_bindings WHERE id = $1`, id).Scan(&bindingJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.GitHubRepositoryBinding{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.GitHubRepositoryBinding{}, fmt.Errorf("query github repository binding: %w", err)
+	}
+	var binding mission.GitHubRepositoryBinding
+	if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+		return mission.GitHubRepositoryBinding{}, fmt.Errorf("unmarshal github repository binding: %w", err)
+	}
+	return binding, nil
+}
+
+// UpdateGitHubRepositoryBinding updates a GitHub repository integration binding.
+func (s *PostgresStore) UpdateGitHubRepositoryBinding(binding mission.GitHubRepositoryBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal github repository binding: %w", err)
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("UpdateGitHubRepositoryBinding", startTime)
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE github_repository_bindings SET
+			tenant_id = $1,
+			repository = $2,
+			status = $3,
+			binding_json = $4,
+			last_webhook_at = $5
+		WHERE id = $6
+	`, nullableString(binding.TenantID), binding.Repository, binding.Status, bindingJSON, nullableTime(binding.LastWebhookAt), binding.BindingID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("update github repository binding: %w", err)
+	}
+	return rowsAffectedErr(result)
+}
+
+// ListGitHubRepositoryBindings lists GitHub repository integration bindings.
+func (s *PostgresStore) ListGitHubRepositoryBindings() ([]mission.GitHubRepositoryBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListGitHubRepositoryBindings", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT binding_json
+		FROM github_repository_bindings
+		ORDER BY repository ASC, created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query github repository bindings: %w", err)
+	}
+	defer rows.Close()
+
+	bindings := make([]mission.GitHubRepositoryBinding, 0)
+	for rows.Next() {
+		var bindingJSON []byte
+		if err := rows.Scan(&bindingJSON); err != nil {
+			return nil, fmt.Errorf("scan github repository binding: %w", err)
+		}
+		var binding mission.GitHubRepositoryBinding
+		if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+			return nil, fmt.Errorf("unmarshal github repository binding: %w", err)
+		}
+		bindings = append(bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate github repository bindings: %w", err)
+	}
+	return bindings, nil
+}
+
+// SaveGitHubWebhookDelivery saves a processed GitHub webhook delivery.
+func (s *PostgresStore) SaveGitHubWebhookDelivery(delivery mission.GitHubWebhookDelivery) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	deliveryJSON, err := json.Marshal(delivery)
+	if err != nil {
+		return fmt.Errorf("marshal github webhook delivery: %w", err)
+	}
+	payloadSummary := delivery.PayloadSummary
+	if payloadSummary == nil {
+		payloadSummary = map[string]any{}
+	}
+	payloadJSON, err := json.Marshal(payloadSummary)
+	if err != nil {
+		return fmt.Errorf("marshal github webhook summary: %w", err)
+	}
+	receivedAt := delivery.ReceivedAt
+	if receivedAt.IsZero() {
+		receivedAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SaveGitHubWebhookDelivery", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO github_webhook_deliveries (
+			delivery_id, event, repository, binding_id, tenant_id, mission_ref, status,
+			delivery_json, payload_summary, received_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, delivery.DeliveryID, delivery.Event, nullableString(delivery.Repository), nullableString(delivery.BindingID), nullableString(delivery.TenantID), nullableString(delivery.MissionRef), delivery.Status, deliveryJSON, payloadJSON, receivedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert github webhook delivery: %w", err)
+	}
+	return nil
+}
+
+// GetGitHubWebhookDelivery retrieves a processed GitHub webhook delivery.
+func (s *PostgresStore) GetGitHubWebhookDelivery(id string) (mission.GitHubWebhookDelivery, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetGitHubWebhookDelivery", startTime)
+
+	var deliveryJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT delivery_json FROM github_webhook_deliveries WHERE delivery_id = $1`, id).Scan(&deliveryJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.GitHubWebhookDelivery{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.GitHubWebhookDelivery{}, fmt.Errorf("query github webhook delivery: %w", err)
+	}
+	var delivery mission.GitHubWebhookDelivery
+	if err := json.Unmarshal(deliveryJSON, &delivery); err != nil {
+		return mission.GitHubWebhookDelivery{}, fmt.Errorf("unmarshal github webhook delivery: %w", err)
+	}
+	return delivery, nil
+}
+
 // AppendEvent appends an event and stages it in the outbox in one transaction.
 func (s *PostgresStore) AppendEvent(event mission.Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

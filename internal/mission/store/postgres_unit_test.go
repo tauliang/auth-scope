@@ -915,6 +915,120 @@ func TestPostgresStoreGrandGovernanceMethods(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreGitHubIntegrationMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	binding := sampleGitHubRepositoryBinding()
+	bindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("INSERT INTO github_repository_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.Repository,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastWebhookAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveGitHubRepositoryBinding(binding); err != nil {
+		t.Fatalf("SaveGitHubRepositoryBinding: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO github_repository_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.Repository,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastWebhookAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveGitHubRepositoryBinding(binding); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveGitHubRepositoryBinding duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json FROM github_repository_bindings").
+		WithArgs(binding.BindingID).
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(bindingJSON))
+	gotBinding, err := store.GetGitHubRepositoryBinding(binding.BindingID)
+	if err != nil {
+		t.Fatalf("GetGitHubRepositoryBinding: %v", err)
+	}
+	if gotBinding.BindingID != binding.BindingID {
+		t.Fatalf("GetGitHubRepositoryBinding = %#v", gotBinding)
+	}
+
+	binding.LastCheckSHA = "abc123"
+	updatedBindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("UPDATE github_repository_bindings").
+		WithArgs(nullableString(binding.TenantID), binding.Repository, binding.Status, updatedBindingJSON, nullableTime(binding.LastWebhookAt), binding.BindingID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateGitHubRepositoryBinding(binding); err != nil {
+		t.Fatalf("UpdateGitHubRepositoryBinding: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json").
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(updatedBindingJSON))
+	bindings, err := store.ListGitHubRepositoryBindings()
+	if err != nil {
+		t.Fatalf("ListGitHubRepositoryBindings: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].Repository != binding.Repository {
+		t.Fatalf("ListGitHubRepositoryBindings = %#v", bindings)
+	}
+
+	delivery := sampleGitHubWebhookDelivery()
+	deliveryJSON := mustJSON(t, delivery)
+	mock.ExpectExec("INSERT INTO github_webhook_deliveries").
+		WithArgs(
+			delivery.DeliveryID,
+			delivery.Event,
+			nullableString(delivery.Repository),
+			nullableString(delivery.BindingID),
+			nullableString(delivery.TenantID),
+			nullableString(delivery.MissionRef),
+			delivery.Status,
+			deliveryJSON,
+			sqlmock.AnyArg(),
+			delivery.ReceivedAt,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveGitHubWebhookDelivery(delivery); err != nil {
+		t.Fatalf("SaveGitHubWebhookDelivery: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO github_webhook_deliveries").
+		WithArgs(
+			delivery.DeliveryID,
+			delivery.Event,
+			nullableString(delivery.Repository),
+			nullableString(delivery.BindingID),
+			nullableString(delivery.TenantID),
+			nullableString(delivery.MissionRef),
+			delivery.Status,
+			deliveryJSON,
+			sqlmock.AnyArg(),
+			delivery.ReceivedAt,
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveGitHubWebhookDelivery(delivery); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveGitHubWebhookDelivery duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT delivery_json FROM github_webhook_deliveries").
+		WithArgs(delivery.DeliveryID).
+		WillReturnRows(sqlmock.NewRows([]string{"delivery_json"}).AddRow(deliveryJSON))
+	gotDelivery, err := store.GetGitHubWebhookDelivery(delivery.DeliveryID)
+	if err != nil {
+		t.Fatalf("GetGitHubWebhookDelivery: %v", err)
+	}
+	if gotDelivery.DeliveryID != delivery.DeliveryID {
+		t.Fatalf("GetGitHubWebhookDelivery = %#v", gotDelivery)
+	}
+}
+
 func TestPostgresStoreListMethods(t *testing.T) {
 	store, mock, cleanup := newMockPostgresStore(t)
 	defer cleanup()
@@ -1224,6 +1338,45 @@ func sampleContainmentRule() mission.ContainmentRule {
 		CreatedBy:  mission.Principal{Subject: "security@example.com", Issuer: "https://idp.example.com"},
 		CreatedAt:  testUnitNow(),
 		ExpiresAt:  testUnitNow().Add(time.Hour),
+	}
+}
+
+func sampleGitHubRepositoryBinding() mission.GitHubRepositoryBinding {
+	return mission.GitHubRepositoryBinding{
+		BindingID:      "ghr_test",
+		TenantID:       "tenant_1",
+		Owner:          "tauliang",
+		Repo:           "auth-scope",
+		Repository:     "tauliang/auth-scope",
+		DefaultBranch:  "main",
+		InstallationID: 42,
+		MissionRef:     "mref_test",
+		BranchPatterns: []string{"main"},
+		RequiredChecks: []string{"Auth Scope Mission Authority"},
+		Status:         mission.GitHubRepositoryBindingStatusActive,
+		CreatedBy:      mission.Principal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
+		CreatedAt:      testUnitNow(),
+	}
+}
+
+func sampleGitHubWebhookDelivery() mission.GitHubWebhookDelivery {
+	return mission.GitHubWebhookDelivery{
+		DeliveryID:  "delivery_test",
+		Event:       "pull_request",
+		Action:      "synchronize",
+		Repository:  "tauliang/auth-scope",
+		SHA:         "abc123",
+		PullRequest: 42,
+		Branch:      "agent/fix-filter",
+		BindingID:   "ghr_test",
+		TenantID:    "tenant_1",
+		MissionRef:  "mref_test",
+		Status:      mission.GitHubWebhookDeliveryStatusAccepted,
+		ReceivedAt:  testUnitNow(),
+		PayloadSummary: map[string]any{
+			"event":      "pull_request",
+			"repository": "tauliang/auth-scope",
+		},
 	}
 }
 

@@ -21,36 +21,40 @@ func (SystemClock) Now() time.Time {
 }
 
 type Service struct {
-	identities         IdentityStore
-	missions           MissionStore
-	governance         GovernanceStore
-	projections        ProjectionStore
-	approvals          ApprovalStore
-	negotiations       NegotiationStore
-	containments       ContainmentStore
-	expansionDecisions ExpansionDecisionStore
-	proposalApprovals  ProposalApprovalStore
-	events             EventStore
-	clock              Clock
-	artifactKey        []byte
-	authorityGuard     AuthorityGuard
-	governanceReads    GovernanceReadStore
+	identities          IdentityStore
+	missions            MissionStore
+	governance          GovernanceStore
+	projections         ProjectionStore
+	approvals           ApprovalStore
+	negotiations        NegotiationStore
+	containments        ContainmentStore
+	expansionDecisions  ExpansionDecisionStore
+	proposalApprovals   ProposalApprovalStore
+	events              EventStore
+	github              GitHubStore
+	clock               Clock
+	artifactKey         []byte
+	githubWebhookSecret []byte
+	authorityGuard      AuthorityGuard
+	governanceReads     GovernanceReadStore
 }
 
 type ServiceDependencies struct {
-	Identities         IdentityStore
-	Missions           MissionStore
-	Governance         GovernanceStore
-	Projections        ProjectionStore
-	Approvals          ApprovalStore
-	Negotiations       NegotiationStore
-	Containments       ContainmentStore
-	ExpansionDecisions ExpansionDecisionStore
-	ProposalApprovals  ProposalApprovalStore
-	Events             EventStore
-	GovernanceReads    GovernanceReadStore
-	AuthorityGuard     AuthorityGuard
-	ArtifactKey        []byte
+	Identities          IdentityStore
+	Missions            MissionStore
+	Governance          GovernanceStore
+	Projections         ProjectionStore
+	Approvals           ApprovalStore
+	Negotiations        NegotiationStore
+	Containments        ContainmentStore
+	ExpansionDecisions  ExpansionDecisionStore
+	ProposalApprovals   ProposalApprovalStore
+	Events              EventStore
+	GitHub              GitHubStore
+	GovernanceReads     GovernanceReadStore
+	AuthorityGuard      AuthorityGuard
+	ArtifactKey         []byte
+	GitHubWebhookSecret []byte
 }
 
 type containmentGuardStores struct {
@@ -74,6 +78,7 @@ func NewServiceWithArtifactKey(store Store, clock Clock, artifactKey []byte) *Se
 		ExpansionDecisions: store,
 		ProposalApprovals:  store,
 		Events:             store,
+		GitHub:             store,
 		GovernanceReads:    store,
 		ArtifactKey:        artifactKey,
 	}, clock)
@@ -97,21 +102,26 @@ func NewServiceWithDependencies(dependencies ServiceDependencies, clock Clock) *
 	if len(dependencies.ArtifactKey) == 0 {
 		dependencies.ArtifactKey = decisionArtifactKeyFromEnv()
 	}
+	if len(dependencies.GitHubWebhookSecret) == 0 {
+		dependencies.GitHubWebhookSecret = GitHubWebhookSecretFromEnv()
+	}
 	return &Service{
-		identities:         dependencies.Identities,
-		missions:           dependencies.Missions,
-		governance:         dependencies.Governance,
-		projections:        dependencies.Projections,
-		approvals:          dependencies.Approvals,
-		negotiations:       dependencies.Negotiations,
-		containments:       dependencies.Containments,
-		expansionDecisions: dependencies.ExpansionDecisions,
-		proposalApprovals:  dependencies.ProposalApprovals,
-		events:             dependencies.Events,
-		clock:              clock,
-		artifactKey:        dependencies.ArtifactKey,
-		authorityGuard:     dependencies.AuthorityGuard,
-		governanceReads:    dependencies.GovernanceReads,
+		identities:          dependencies.Identities,
+		missions:            dependencies.Missions,
+		governance:          dependencies.Governance,
+		projections:         dependencies.Projections,
+		approvals:           dependencies.Approvals,
+		negotiations:        dependencies.Negotiations,
+		containments:        dependencies.Containments,
+		expansionDecisions:  dependencies.ExpansionDecisions,
+		proposalApprovals:   dependencies.ProposalApprovals,
+		events:              dependencies.Events,
+		github:              dependencies.GitHub,
+		clock:               clock,
+		artifactKey:         dependencies.ArtifactKey,
+		githubWebhookSecret: dependencies.GitHubWebhookSecret,
+		authorityGuard:      dependencies.AuthorityGuard,
+		governanceReads:     dependencies.GovernanceReads,
 	}
 }
 

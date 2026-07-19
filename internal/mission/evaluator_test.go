@@ -7,6 +7,7 @@ func TestActionInScopeHonorsWildcardsAndForbiddenActions(t *testing.T) {
 		Resources: []ResourceGrant{
 			{Type: "drive_folder", ID: "*", Actions: []string{"read"}},
 			{Type: "ticket", ID: "inc-123", Actions: []string{"*"}},
+			{Type: "repo_path", ID: "tauliang/auth-scope:frontend/**", Actions: []string{"edit"}},
 		},
 		ForbiddenActions: []string{"delete", "email.send"},
 	}
@@ -41,12 +42,45 @@ func TestActionInScopeHonorsWildcardsAndForbiddenActions(t *testing.T) {
 			action: Action{Resource: ActionResource{Type: "drive_folder", ID: "other"}, Operation: "write"},
 			want:   false,
 		},
+		{
+			name:   "allows repository prefix grant",
+			action: Action{Resource: ActionResource{Type: "repo_path", ID: "tauliang/auth-scope:frontend/src/App.tsx"}, Operation: "edit"},
+			want:   true,
+		},
+		{
+			name:   "blocks repository path outside prefix grant",
+			action: Action{Resource: ActionResource{Type: "repo_path", ID: "tauliang/auth-scope:backend/main.go"}, Operation: "edit"},
+			want:   false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := actionInScope(region, tt.action); got != tt.want {
 				t.Fatalf("actionInScope() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResourceIDMatchesGlobAndTreePatterns(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		id      string
+		want    bool
+	}{
+		{name: "exact", pattern: "repo:path/file.go", id: "repo:path/file.go", want: true},
+		{name: "tree prefix", pattern: "repo:frontend/**", id: "repo:frontend/src/App.tsx", want: true},
+		{name: "tree root", pattern: "repo:frontend/**", id: "repo:frontend", want: true},
+		{name: "tree outside", pattern: "repo:frontend/**", id: "repo:frontends/App.tsx", want: false},
+		{name: "path match", pattern: "repo:*.md", id: "repo:README.md", want: true},
+		{name: "path match does not cross slash", pattern: "repo:*.md", id: "repo:docs/README.md", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resourceIDMatches(tt.pattern, tt.id); got != tt.want {
+				t.Fatalf("resourceIDMatches(%q, %q) = %v, want %v", tt.pattern, tt.id, got, tt.want)
 			}
 		})
 	}

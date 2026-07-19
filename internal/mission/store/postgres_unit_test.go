@@ -1354,7 +1354,7 @@ func sampleGitHubRepositoryBinding() mission.GitHubRepositoryBinding {
 		BranchPatterns: []string{"main"},
 		RequiredChecks: []string{"Auth Scope Mission Authority"},
 		Status:         mission.GitHubRepositoryBindingStatusActive,
-		CreatedBy:      mission.Principal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
+		CreatedBy:      mission.GitHubPrincipal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
 		CreatedAt:      testUnitNow(),
 	}
 }

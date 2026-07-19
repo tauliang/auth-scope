@@ -40,7 +40,7 @@ func TestAPIGitHubIntegrationLifecycle(t *testing.T) {
 	planCheck := httptest.NewRecorder()
 	router.ServeHTTP(planCheck, jsonRequest(http.MethodPost, "/v1/integrations/github/check-runs/plan", GitHubCheckRunPlanRequest{
 		MissionVersionSeen: mission.MissionVersion,
-		Actor:              Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Actor:              GitHubActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
 		Repository:         "tauliang/auth-scope",
 		HeadSHA:            "abc123",
 		Branch:             "agent/fix-filter",

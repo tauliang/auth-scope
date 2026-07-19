@@ -73,7 +73,7 @@ func (h *Handler) githubCheckRunPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if identity != nil {
-		if err := bindActorIdentity(&req.Actor, *identity); err != nil {
+		if err := bindGitHubActorIdentity(&req.Actor, *identity); err != nil {
 			writeError(w, http.StatusUnauthorized, err)
 			return
 		}
@@ -94,4 +94,13 @@ func readRawRequestBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 		return nil, false
 	}
 	return body, true
+}
+
+func bindGitHubActorIdentity(actor *GitHubActor, identity AgentIdentity) error {
+	missionActorValue := missionActor(*actor)
+	if err := bindActorIdentity(&missionActorValue, identity); err != nil {
+		return err
+	}
+	*actor = githubActor(missionActorValue)
+	return nil
 }

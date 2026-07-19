@@ -103,7 +103,7 @@ func TestGitHubCheckRunPlanEvaluatesChangedFiles(t *testing.T) {
 
 	plan, err := service.PlanGitHubCheckRun(GitHubCheckRunPlanRequest{
 		MissionVersionSeen: mission.MissionVersion,
-		Actor:              Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Actor:              GitHubActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
 		Repository:         "https://github.com/tauliang/auth-scope.git",
 		PullRequest:        42,
 		HeadSHA:            "abc123",
@@ -126,10 +126,10 @@ func TestGitHubCheckRunPlanEvaluatesChangedFiles(t *testing.T) {
 	if len(plan.Evaluations) != 2 {
 		t.Fatalf("evaluations len = %d, want 2", len(plan.Evaluations))
 	}
-	if plan.Evaluations[0].Decision != DecisionAllow || plan.Evaluations[0].DecisionArtifact == "" {
+	if plan.Evaluations[0].Decision != string(DecisionAllow) || plan.Evaluations[0].DecisionArtifact == "" {
 		t.Fatalf("first evaluation = %#v, want allow with artifact", plan.Evaluations[0])
 	}
-	if plan.Evaluations[1].Decision != DecisionRequireExpansion {
+	if plan.Evaluations[1].Decision != string(DecisionRequireExpansion) {
 		t.Fatalf("second evaluation = %#v, want require_expansion", plan.Evaluations[1])
 	}
 	updated, err := service.github.GetGitHubRepositoryBinding(binding.BindingID)

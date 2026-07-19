@@ -1,137 +1,37 @@
 package mission
 
-import "time"
+import githubint "github.com/tauliang/auth-scope/internal/mission/integrations/github"
 
 const (
-	GitHubRepositoryBindingStatusActive   = "active"
-	GitHubRepositoryBindingStatusDisabled = "disabled"
+	GitHubRepositoryBindingStatusActive   = githubint.RepositoryBindingStatusActive
+	GitHubRepositoryBindingStatusDisabled = githubint.RepositoryBindingStatusDisabled
 
-	GitHubWebhookDeliveryStatusAccepted  = "accepted"
-	GitHubWebhookDeliveryStatusDuplicate = "duplicate"
-	GitHubWebhookDeliveryStatusIgnored   = "ignored"
+	GitHubWebhookDeliveryStatusAccepted  = githubint.WebhookDeliveryStatusAccepted
+	GitHubWebhookDeliveryStatusDuplicate = githubint.WebhookDeliveryStatusDuplicate
+	GitHubWebhookDeliveryStatusIgnored   = githubint.WebhookDeliveryStatusIgnored
 
-	GitHubCheckConclusionSuccess        = "success"
-	GitHubCheckConclusionFailure        = "failure"
-	GitHubCheckConclusionActionRequired = "action_required"
-	GitHubCheckConclusionNeutral        = "neutral"
+	GitHubCheckConclusionSuccess        = githubint.CheckConclusionSuccess
+	GitHubCheckConclusionFailure        = githubint.CheckConclusionFailure
+	GitHubCheckConclusionActionRequired = githubint.CheckConclusionActionRequired
+	GitHubCheckConclusionNeutral        = githubint.CheckConclusionNeutral
 )
 
-type GitHubRepositoryBinding struct {
-	BindingID       string            `json:"binding_id"`
-	TenantID        string            `json:"tenant_id,omitempty"`
-	Owner           string            `json:"owner"`
-	Repo            string            `json:"repo"`
-	Repository      string            `json:"repository"`
-	DefaultBranch   string            `json:"default_branch,omitempty"`
-	InstallationID  int64             `json:"installation_id,omitempty"`
-	MissionRef      string            `json:"mission_ref,omitempty"`
-	BranchPatterns  []string          `json:"branch_patterns,omitempty"`
-	RequiredChecks  []string          `json:"required_checks,omitempty"`
-	Status          string            `json:"status"`
-	Metadata        map[string]string `json:"metadata,omitempty"`
-	CreatedBy       Principal         `json:"created_by,omitempty"`
-	CreatedAt       time.Time         `json:"created_at"`
-	LastWebhookAt   time.Time         `json:"last_webhook_at,omitempty"`
-	LastDeliveryID  string            `json:"last_delivery_id,omitempty"`
-	LastCheckSHA    string            `json:"last_check_sha,omitempty"`
-	LastCheckStatus string            `json:"last_check_status,omitempty"`
+type GitHubPrincipal = githubint.Principal
+type GitHubActor = githubint.Actor
+type GitHubRepositoryBinding = githubint.RepositoryBinding
+type CreateGitHubRepositoryBindingRequest = githubint.CreateRepositoryBindingRequest
+type GitHubWebhookDelivery = githubint.WebhookDelivery
+type IngestGitHubWebhookRequest = githubint.IngestWebhookRequest
+type GitHubWebhookResponse = githubint.WebhookResponse
+type GitHubChangedFile = githubint.ChangedFile
+type GitHubCheckRunPlanRequest = githubint.CheckRunPlanRequest
+type GitHubCheckEvaluation = githubint.CheckEvaluation
+type GitHubCheckRunPlanResponse = githubint.CheckRunPlanResponse
+
+func ValidateGitHubWebhookSignature(secret []byte, signatureHeader string, body []byte) bool {
+	return githubint.ValidateWebhookSignature(secret, signatureHeader, body)
 }
 
-type CreateGitHubRepositoryBindingRequest struct {
-	TenantID       string            `json:"tenant_id,omitempty"`
-	Owner          string            `json:"owner,omitempty"`
-	Repo           string            `json:"repo,omitempty"`
-	Repository     string            `json:"repository,omitempty"`
-	DefaultBranch  string            `json:"default_branch,omitempty"`
-	InstallationID int64             `json:"installation_id,omitempty"`
-	MissionRef     string            `json:"mission_ref,omitempty"`
-	BranchPatterns []string          `json:"branch_patterns,omitempty"`
-	RequiredChecks []string          `json:"required_checks,omitempty"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
-}
-
-type GitHubWebhookDelivery struct {
-	DeliveryID     string         `json:"delivery_id"`
-	Event          string         `json:"event"`
-	Action         string         `json:"action,omitempty"`
-	Repository     string         `json:"repository,omitempty"`
-	Ref            string         `json:"ref,omitempty"`
-	SHA            string         `json:"sha,omitempty"`
-	PullRequest    int            `json:"pull_request,omitempty"`
-	Branch         string         `json:"branch,omitempty"`
-	BindingID      string         `json:"binding_id,omitempty"`
-	TenantID       string         `json:"tenant_id,omitempty"`
-	MissionRef     string         `json:"mission_ref,omitempty"`
-	Status         string         `json:"status"`
-	ReceivedAt     time.Time      `json:"received_at"`
-	PayloadSummary map[string]any `json:"payload_summary,omitempty"`
-}
-
-type IngestGitHubWebhookRequest struct {
-	Event      string
-	DeliveryID string
-	Signature  string
-	Body       []byte
-}
-
-type GitHubWebhookResponse struct {
-	Accepted   bool   `json:"accepted"`
-	Status     string `json:"status"`
-	Event      string `json:"event"`
-	DeliveryID string `json:"delivery_id"`
-	Repository string `json:"repository,omitempty"`
-	Action     string `json:"action,omitempty"`
-	Ref        string `json:"ref,omitempty"`
-	SHA        string `json:"sha,omitempty"`
-	BindingID  string `json:"binding_id,omitempty"`
-	MissionRef string `json:"mission_ref,omitempty"`
-	Message    string `json:"message,omitempty"`
-	ReceivedAt string `json:"received_at,omitempty"`
-}
-
-type GitHubChangedFile struct {
-	Path      string `json:"path"`
-	Status    string `json:"status,omitempty"`
-	Operation string `json:"operation,omitempty"`
-	Additions int    `json:"additions,omitempty"`
-	Deletions int    `json:"deletions,omitempty"`
-}
-
-type GitHubCheckRunPlanRequest struct {
-	MissionRef         string              `json:"mission_ref,omitempty"`
-	MissionVersionSeen int                 `json:"mission_version_seen,omitempty"`
-	Actor              Actor               `json:"actor"`
-	Repository         string              `json:"repository"`
-	PullRequest        int                 `json:"pull_request,omitempty"`
-	HeadSHA            string              `json:"head_sha"`
-	Branch             string              `json:"branch,omitempty"`
-	ChangedFiles       []GitHubChangedFile `json:"changed_files"`
-	Context            map[string]any      `json:"context,omitempty"`
-}
-
-type GitHubCheckEvaluation struct {
-	Path             string         `json:"path"`
-	ResourceID       string         `json:"resource_id"`
-	Operation        string         `json:"operation"`
-	Decision         Decision       `json:"decision"`
-	ReasonCodes      []string       `json:"reason_codes,omitempty"`
-	HumanReason      string         `json:"human_reason,omitempty"`
-	DecisionArtifact string         `json:"decision_artifact,omitempty"`
-	Constraints      map[string]any `json:"constraints,omitempty"`
-}
-
-type GitHubCheckRunPlanResponse struct {
-	Name           string                  `json:"name"`
-	ExternalID     string                  `json:"external_id"`
-	Repository     string                  `json:"repository"`
-	HeadSHA        string                  `json:"head_sha"`
-	Status         string                  `json:"status"`
-	Conclusion     string                  `json:"conclusion"`
-	Title          string                  `json:"title"`
-	Summary        string                  `json:"summary"`
-	Text           string                  `json:"text,omitempty"`
-	MissionRef     string                  `json:"mission_ref"`
-	MissionVersion int                     `json:"mission_version,omitempty"`
-	BindingID      string                  `json:"binding_id,omitempty"`
-	Evaluations    []GitHubCheckEvaluation `json:"evaluations"`
+func SignGitHubWebhookBody(secret []byte, body []byte) string {
+	return githubint.SignWebhookBody(secret, body)
 }

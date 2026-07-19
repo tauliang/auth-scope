@@ -1,28 +1,24 @@
 package okta
 
-import "time"
+import (
+	"time"
 
-const (
-	AppBindingStatusActive   = "active"
-	AppBindingStatusDisabled = "disabled"
-
-	GroupMatchAny = "any"
-	GroupMatchAll = "all"
-
-	ResolutionStatusAccepted = "accepted"
-	ResolutionStatusDenied   = "denied"
+	"github.com/tauliang/auth-scope/internal/mission/integrations/contract"
 )
 
-type Principal struct {
-	Subject string `json:"subject"`
-	Issuer  string `json:"issuer"`
-}
+const (
+	AppBindingStatusActive   = contract.BindingStatusActive
+	AppBindingStatusDisabled = contract.BindingStatusDisabled
 
-type Actor struct {
-	AgentInstanceID string `json:"agent_instance_id"`
-	ClientID        string `json:"client_id"`
-	KeyThumbprint   string `json:"key_thumbprint,omitempty"`
-}
+	GroupMatchAny = contract.MatchAny
+	GroupMatchAll = contract.MatchAll
+
+	ResolutionStatusAccepted = contract.ResolutionStatusAccepted
+	ResolutionStatusDenied   = contract.ResolutionStatusDenied
+)
+
+type Principal = contract.Principal
+type Actor = contract.Actor
 
 type AppBinding struct {
 	BindingID             string            `json:"binding_id"`
@@ -69,33 +65,10 @@ type CreateAppBindingRequest struct {
 	Metadata              map[string]string `json:"metadata,omitempty"`
 }
 
-type EvaluationActionResource struct {
-	Type string `json:"type"`
-	ID   string `json:"id"`
-}
-
-type EvaluationAction struct {
-	Type      string                   `json:"type"`
-	Name      string                   `json:"name,omitempty"`
-	Resource  EvaluationActionResource `json:"resource"`
-	Operation string                   `json:"operation"`
-}
-
-type EvaluationRequest struct {
-	MissionVersionSeen int              `json:"mission_version_seen,omitempty"`
-	Actor              Actor            `json:"actor"`
-	Action             EvaluationAction `json:"action"`
-}
-
-type EvaluationResponse struct {
-	Decision         string         `json:"decision"`
-	MissionRef       string         `json:"mission_ref,omitempty"`
-	MissionVersion   int            `json:"mission_version,omitempty"`
-	ReasonCodes      []string       `json:"reason_codes,omitempty"`
-	HumanReason      string         `json:"human_reason,omitempty"`
-	DecisionArtifact string         `json:"decision_artifact,omitempty"`
-	Constraints      map[string]any `json:"constraints,omitempty"`
-}
+type EvaluationActionResource = contract.EvaluationActionResource
+type EvaluationAction = contract.EvaluationAction
+type EvaluationRequest = contract.EvaluationRequest
+type EvaluationResponse = contract.EvaluationResponse
 
 type ResolveAuthorityContextRequest struct {
 	TenantID   string             `json:"tenant_id,omitempty"`
@@ -129,14 +102,4 @@ type AuthorityContextResponse struct {
 	ResolvedAt  string              `json:"resolved_at,omitempty"`
 }
 
-type Event struct {
-	EventID       string
-	MissionRef    string
-	TenantID      string
-	Type          string
-	Actor         map[string]any
-	Payload       map[string]any
-	VersionBefore int
-	VersionAfter  int
-	OccurredAt    time.Time
-}
+type Event = contract.Event

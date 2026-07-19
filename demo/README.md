@@ -42,6 +42,13 @@ node demo/run-demo.mjs --headed
 
 The runner writes per-run state to `demo/.generated/mission-authority-state.json`. That file is ignored because it contains generated IDs and a throwaway demo private key used only to sign the mock agent requests.
 
+## Recorded Walkthrough
+
+The repository includes a two-minute captioned recording of the primary demo flow:
+
+- `demo/videos/auth-scope-mission-authority-demo-2min-captioned.webm` (`121.08s`)
+- `demo/videos/auth-scope-mission-authority-demo-2min-captions.md`
+
 ## Useful Options
 
 ```bash

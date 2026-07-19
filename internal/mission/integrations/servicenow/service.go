@@ -40,17 +40,17 @@ type RealClock struct{}
 func (RealClock) Now() time.Time { return time.Now() }
 
 type Config struct {
-	Store      Store
-	Evaluator  Evaluator
-	EventSink  EventSink
-	Clock      Clock
+	Store     Store
+	Evaluator Evaluator
+	EventSink EventSink
+	Clock     Clock
 }
 
 type Service struct {
-	store      Store
-	evaluator  Evaluator
-	eventSink  EventSink
-	clock      Clock
+	store     Store
+	evaluator Evaluator
+	eventSink EventSink
+	clock     Clock
 }
 
 func NewService(cfg *Config) *Service {
@@ -74,23 +74,23 @@ func (s *Service) CreateTicketBinding(ctx context.Context, req *CreateTicketBind
 	}
 
 	binding := &TicketBinding{
-		BindingID:          fmt.Sprintf("sn-%s", generateUniqueID()),
-		TenantID:           req.TenantID,
-		InstanceURL:        req.InstanceURL,
-		ServiceNowSysID:    req.ServiceNowSysID,
-		State:              req.State,
-		MissionRef:         req.MissionRef,
-		AssignmentGroup:    req.AssignmentGroup,
-		CallerID:           req.CallerID,
-		RequiredGroups:     req.RequiredGroups,
-		AdminGroups:        req.AdminGroups,
-		AllowedSubjects:    req.AllowedSubjects,
-		GroupClaim:         req.GroupClaim,
-		SubjectClaim:       req.SubjectClaim,
-		GroupMatchMode:     req.GroupMatchMode,
-		Status:             TicketBindingStatusActive,
-		Metadata:           req.Metadata,
-		CreatedAt:          s.clock.Now(),
+		BindingID:       fmt.Sprintf("sn-%s", generateUniqueID()),
+		TenantID:        req.TenantID,
+		InstanceURL:     req.InstanceURL,
+		ServiceNowSysID: req.ServiceNowSysID,
+		State:           req.State,
+		MissionRef:      req.MissionRef,
+		AssignmentGroup: req.AssignmentGroup,
+		CallerID:        req.CallerID,
+		RequiredGroups:  req.RequiredGroups,
+		AdminGroups:     req.AdminGroups,
+		AllowedSubjects: req.AllowedSubjects,
+		GroupClaim:      req.GroupClaim,
+		SubjectClaim:    req.SubjectClaim,
+		GroupMatchMode:  req.GroupMatchMode,
+		Status:          TicketBindingStatusActive,
+		Metadata:        req.Metadata,
+		CreatedAt:       s.clock.Now(),
 	}
 
 	if err := s.store.CreateTicketBinding(ctx, binding); err != nil {
@@ -103,9 +103,9 @@ func (s *Service) CreateTicketBinding(ctx context.Context, req *CreateTicketBind
 		TenantID:   binding.TenantID,
 		Type:       "ticket_binding.created",
 		Payload: map[string]any{
-			"binding_id":      binding.BindingID,
+			"binding_id":         binding.BindingID,
 			"service_now_sys_id": binding.ServiceNowSysID,
-			"state":           binding.State,
+			"state":              binding.State,
 		},
 		OccurredAt: s.clock.Now(),
 	}); err != nil {
@@ -141,11 +141,11 @@ func (s *Service) UpdateTicketStatus(ctx context.Context, bindingID string, newS
 	}
 
 	validStates := map[string]bool{
-		"new":       true,
+		"new":         true,
 		"in_progress": true,
-		"on_hold":   true,
-		"resolved":  true,
-		"closed":    true,
+		"on_hold":     true,
+		"resolved":    true,
+		"closed":      true,
 	}
 
 	if !validStates[newState] {

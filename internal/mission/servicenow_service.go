@@ -8,20 +8,20 @@ import (
 
 func (s *Service) CreateServiceNowTicketBinding(ctx context.Context, req CreateServiceNowTicketBindingRequest, actor Principal) (ServiceNowTicketBinding, error) {
 	resp, err := s.servicenowIntegration().CreateTicketBinding(ctx, &snint.CreateTicketBindingRequest{
-		TenantID:         req.TenantID,
-		InstanceURL:      req.InstanceURL,
-		ServiceNowSysID:  req.ServiceNowSysID,
-		State:            req.State,
-		MissionRef:       req.MissionRef,
-		AssignmentGroup:  req.AssignmentGroup,
-		CallerID:         req.CallerID,
-		RequiredGroups:   req.RequiredGroups,
-		AdminGroups:      req.AdminGroups,
-		AllowedSubjects:  req.AllowedSubjects,
-		GroupClaim:       req.GroupClaim,
-		SubjectClaim:     req.SubjectClaim,
-		GroupMatchMode:   req.GroupMatchMode,
-		Metadata:         req.Metadata,
+		TenantID:        req.TenantID,
+		InstanceURL:     req.InstanceURL,
+		ServiceNowSysID: req.ServiceNowSysID,
+		State:           req.State,
+		MissionRef:      req.MissionRef,
+		AssignmentGroup: req.AssignmentGroup,
+		CallerID:        req.CallerID,
+		RequiredGroups:  req.RequiredGroups,
+		AdminGroups:     req.AdminGroups,
+		AllowedSubjects: req.AllowedSubjects,
+		GroupClaim:      req.GroupClaim,
+		SubjectClaim:    req.SubjectClaim,
+		GroupMatchMode:  req.GroupMatchMode,
+		Metadata:        req.Metadata,
 	})
 	if err != nil {
 		return ServiceNowTicketBinding{}, err
@@ -75,9 +75,9 @@ func (s *Service) ResolveServiceNowAuthorityContext(ctx context.Context, req Res
 				KeyThumbprint:   req.Evaluation.Actor.KeyThumbprint,
 			},
 			Action: snint.EvaluationAction{
-				Type:      req.Evaluation.Action.Type,
-				Name:      req.Evaluation.Action.Name,
-				Resource:  snint.EvaluationActionResource{
+				Type: req.Evaluation.Action.Type,
+				Name: req.Evaluation.Action.Name,
+				Resource: snint.EvaluationActionResource{
 					Type: req.Evaluation.Action.Resource.Type,
 					ID:   req.Evaluation.Action.Resource.ID,
 				},

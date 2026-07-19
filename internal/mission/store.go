@@ -42,6 +42,7 @@ type Store interface {
 	OktaStore
 	EntraStore
 	SlackStore
+	AtlassianStore
 	ExpansionDecisionStore
 	ProposalApprovalStore
 	EventStore
@@ -69,6 +70,7 @@ type MemoryStore struct {
 	oktaBindings       map[string]OktaAppBinding
 	entraRegistrations map[string]EntraAppRegistration
 	slackBindings      map[string]SlackWorkspaceBinding
+	atlassianBindings  map[string]AtlassianSiteBinding
 	events             []Event
 }
 
@@ -92,6 +94,7 @@ func NewMemoryStore() *MemoryStore {
 		oktaBindings:       make(map[string]OktaAppBinding),
 		entraRegistrations: make(map[string]EntraAppRegistration),
 		slackBindings:      make(map[string]SlackWorkspaceBinding),
+		atlassianBindings:  make(map[string]AtlassianSiteBinding),
 	}
 }
 
@@ -926,6 +929,75 @@ func (s *MemoryStore) ListSlackWorkspaceBindings() ([]SlackWorkspaceBinding, err
 			return -1
 		}
 		if a.WorkspaceID > b.WorkspaceID {
+			return 1
+		}
+		if a.MissionRef < b.MissionRef {
+			return -1
+		}
+		if a.MissionRef > b.MissionRef {
+			return 1
+		}
+		if a.BindingID < b.BindingID {
+			return -1
+		}
+		if a.BindingID > b.BindingID {
+			return 1
+		}
+		return 0
+	})
+	return bindings, nil
+}
+
+func (s *MemoryStore) SaveAtlassianSiteBinding(binding AtlassianSiteBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.atlassianBindings[binding.BindingID]; ok {
+		return ErrConflict
+	}
+	for _, existing := range s.atlassianBindings {
+		if existing.Status == AtlassianSiteBindingStatusActive &&
+			existing.TenantID == binding.TenantID &&
+			existing.MissionRef == binding.MissionRef &&
+			(existing.SiteURL == binding.SiteURL || (existing.CloudID != "" && existing.CloudID == binding.CloudID)) {
+			return ErrConflict
+		}
+	}
+	s.atlassianBindings[binding.BindingID] = binding
+	return nil
+}
+
+func (s *MemoryStore) GetAtlassianSiteBinding(id string) (AtlassianSiteBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	binding, ok := s.atlassianBindings[id]
+	if !ok {
+		return AtlassianSiteBinding{}, ErrNotFound
+	}
+	return binding, nil
+}
+
+func (s *MemoryStore) UpdateAtlassianSiteBinding(binding AtlassianSiteBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.atlassianBindings[binding.BindingID]; !ok {
+		return ErrNotFound
+	}
+	s.atlassianBindings[binding.BindingID] = binding
+	return nil
+}
+
+func (s *MemoryStore) ListAtlassianSiteBindings() ([]AtlassianSiteBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	bindings := make([]AtlassianSiteBinding, 0, len(s.atlassianBindings))
+	for _, binding := range s.atlassianBindings {
+		bindings = append(bindings, binding)
+	}
+	slices.SortFunc(bindings, func(a, b AtlassianSiteBinding) int {
+		if a.SiteURL < b.SiteURL {
+			return -1
+		}
+		if a.SiteURL > b.SiteURL {
 			return 1
 		}
 		if a.MissionRef < b.MissionRef {

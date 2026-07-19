@@ -44,6 +44,7 @@ func NewHandlerWithOptions(service *Service, authenticator AdminAuthenticator, o
 		Okta:            service,
 		Entra:           service,
 		Slack:           service,
+		Atlassian:       service,
 	}, authenticator, options)
 }
 
@@ -121,6 +122,10 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("POST /v1/integrations/slack/workspace-bindings", h.requireAdmin(http.HandlerFunc(h.createSlackWorkspaceBinding)))
 	mux.Handle("GET /v1/integrations/slack/workspace-bindings", h.requireAdmin(http.HandlerFunc(h.listSlackWorkspaceBindings)))
 	mux.HandleFunc("POST /v1/integrations/slack/message-actions/authorize", h.authorizeSlackMessageAction)
+	mux.Handle("POST /v1/integrations/atlassian/site-bindings", h.requireAdmin(http.HandlerFunc(h.createAtlassianSiteBinding)))
+	mux.Handle("GET /v1/integrations/atlassian/site-bindings", h.requireAdmin(http.HandlerFunc(h.listAtlassianSiteBindings)))
+	mux.HandleFunc("POST /v1/integrations/atlassian/jira/issues/authorize", h.authorizeAtlassianJiraIssueAction)
+	mux.HandleFunc("POST /v1/integrations/atlassian/confluence/pages/authorize", h.authorizeAtlassianConfluencePageAction)
 	mux.Handle("GET /v1/events", h.requireAdmin(http.HandlerFunc(h.events)))
 	mux.Handle("GET /v1/events/stream", h.requireAdmin(http.HandlerFunc(h.eventsStream)))
 	return requestID(mux)
@@ -198,6 +203,9 @@ func (h *Handler) discovery(w http.ResponseWriter, r *http.Request) {
 			"okta_integration":          true,
 			"entra_integration":         true,
 			"slack_integration":         true,
+			"atlassian_integration":     true,
+			"jira_integration":          true,
+			"confluence_integration":    true,
 			"mission_proposals":         true,
 			"delegation":                true,
 			"expansion_requests":        true,

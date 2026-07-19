@@ -2085,6 +2085,129 @@ func (s *PostgresStore) ListSlackWorkspaceBindings() ([]mission.SlackWorkspaceBi
 	return bindings, nil
 }
 
+// SaveAtlassianSiteBinding saves an Atlassian site mission binding.
+func (s *PostgresStore) SaveAtlassianSiteBinding(binding mission.AtlassianSiteBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal atlassian site binding: %w", err)
+	}
+	createdAt := binding.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SaveAtlassianSiteBinding", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO atlassian_site_bindings (
+			id, tenant_id, site_url, cloud_id, mission_ref, status, binding_json, created_at, last_resolved_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, binding.BindingID, nullableString(binding.TenantID), binding.SiteURL, nullableString(binding.CloudID), binding.MissionRef, binding.Status, bindingJSON, createdAt, nullableTime(binding.LastResolvedAt))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert atlassian site binding: %w", err)
+	}
+	return nil
+}
+
+// GetAtlassianSiteBinding retrieves an Atlassian site mission binding.
+func (s *PostgresStore) GetAtlassianSiteBinding(id string) (mission.AtlassianSiteBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetAtlassianSiteBinding", startTime)
+
+	var bindingJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT binding_json FROM atlassian_site_bindings WHERE id = $1`, id).Scan(&bindingJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.AtlassianSiteBinding{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.AtlassianSiteBinding{}, fmt.Errorf("query atlassian site binding: %w", err)
+	}
+	var binding mission.AtlassianSiteBinding
+	if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+		return mission.AtlassianSiteBinding{}, fmt.Errorf("unmarshal atlassian site binding: %w", err)
+	}
+	return binding, nil
+}
+
+// UpdateAtlassianSiteBinding updates an Atlassian site mission binding.
+func (s *PostgresStore) UpdateAtlassianSiteBinding(binding mission.AtlassianSiteBinding) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bindingJSON, err := json.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal atlassian site binding: %w", err)
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("UpdateAtlassianSiteBinding", startTime)
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE atlassian_site_bindings SET
+			tenant_id = $1,
+			site_url = $2,
+			cloud_id = $3,
+			mission_ref = $4,
+			status = $5,
+			binding_json = $6,
+			last_resolved_at = $7
+		WHERE id = $8
+	`, nullableString(binding.TenantID), binding.SiteURL, nullableString(binding.CloudID), binding.MissionRef, binding.Status, bindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("update atlassian site binding: %w", err)
+	}
+	return rowsAffectedErr(result)
+}
+
+// ListAtlassianSiteBindings lists Atlassian site mission bindings.
+func (s *PostgresStore) ListAtlassianSiteBindings() ([]mission.AtlassianSiteBinding, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListAtlassianSiteBindings", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT binding_json
+		FROM atlassian_site_bindings
+		ORDER BY site_url ASC, mission_ref ASC, created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query atlassian site bindings: %w", err)
+	}
+	defer rows.Close()
+
+	bindings := make([]mission.AtlassianSiteBinding, 0)
+	for rows.Next() {
+		var bindingJSON []byte
+		if err := rows.Scan(&bindingJSON); err != nil {
+			return nil, fmt.Errorf("scan atlassian site binding: %w", err)
+		}
+		var binding mission.AtlassianSiteBinding
+		if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+			return nil, fmt.Errorf("unmarshal atlassian site binding: %w", err)
+		}
+		bindings = append(bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate atlassian site bindings: %w", err)
+	}
+	return bindings, nil
+}
+
 // AppendEvent appends an event and stages it in the outbox in one transaction.
 func (s *PostgresStore) AppendEvent(event mission.Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

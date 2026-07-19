@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tauliang/auth-scope/internal/mission/integrations/atlassian"
 	"github.com/tauliang/auth-scope/internal/mission/integrations/contract"
 	"github.com/tauliang/auth-scope/internal/mission/integrations/entra"
 	"github.com/tauliang/auth-scope/internal/mission/integrations/github"
@@ -54,6 +55,7 @@ func TestProvidersAcceptSharedMissionAuthorityContract(t *testing.T) {
 	_ = entra.Config{Evaluator: evaluator, Events: events, Clock: clock, NewID: newID}
 	_ = slack.Config{Evaluator: evaluator, Events: events, Clock: clock, NewID: newID}
 	_ = servicenow.Config{Evaluator: evaluator, Events: events, Clock: clock, NewID: newID}
+	_ = atlassian.Config{Evaluator: evaluator, Events: events, Clock: clock, NewID: newID}
 }
 
 func TestProviderCommonTypesRoundTripThroughSharedContract(t *testing.T) {
@@ -80,6 +82,7 @@ func TestProviderCommonTypesRoundTripThroughSharedContract(t *testing.T) {
 		entra.EvaluationRequest(req),
 		slack.EvaluationRequest(req),
 		servicenow.EvaluationRequest(req),
+		atlassian.EvaluationRequest(req),
 	}
 	for _, providerReq := range providerRequests {
 		if providerReq.MissionRef != req.MissionRef || providerReq.Action.Resource.ChannelID != "C123" {
@@ -102,6 +105,7 @@ func TestProviderCommonTypesRoundTripThroughSharedContract(t *testing.T) {
 		entra.Event(event),
 		slack.Event(event),
 		servicenow.Event(event),
+		atlassian.Event(event),
 	}
 	for _, providerEvent := range providerEvents {
 		if providerEvent.EventID != event.EventID || providerEvent.Payload["resource"] != "res_123" {

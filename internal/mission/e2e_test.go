@@ -254,6 +254,102 @@ func TestE2ESlackIntegrationFlow(t *testing.T) {
 	}
 }
 
+func TestE2EAtlassianIntegrationFlow(t *testing.T) {
+	service := testService()
+	router := NewHandler(service).Routes()
+	mission := approveAtlassianMission(t, service)
+
+	binding := postJSON[AtlassianSiteBinding](t, router, "/v1/integrations/atlassian/site-bindings", CreateAtlassianSiteBindingRequest{
+		TenantID:            "demo",
+		SiteURL:             "https://acme.atlassian.net/",
+		CloudID:             "cloud_123",
+		SiteName:            "Acme Atlassian",
+		MissionRef:          mission.MissionRef,
+		JiraProjectKeys:     []string{"FIN"},
+		ConfluenceSpaceKeys: []string{"ENG"},
+		AllowedJiraActions:  []string{AtlassianJiraActionTransitionIssue},
+		AllowedPageActions:  []string{AtlassianConfluenceActionUpdatePage},
+		RequiredGroups:      []string{"Mission Operators"},
+		GroupMatchMode:      AtlassianGroupMatchAny,
+	})
+	if binding.SiteURL != "https://acme.atlassian.net" || binding.MissionRef != mission.MissionRef {
+		t.Fatalf("unexpected Atlassian binding: %#v", binding)
+	}
+
+	listed := getJSON[struct {
+		SiteBindings []AtlassianSiteBinding `json:"site_bindings"`
+	}](t, router, "/v1/integrations/atlassian/site-bindings")
+	if len(listed.SiteBindings) != 1 || listed.SiteBindings[0].BindingID != binding.BindingID {
+		t.Fatalf("Atlassian binding list = %#v, want binding %s", listed.SiteBindings, binding.BindingID)
+	}
+
+	jira := postJSON[AtlassianActionAuthorizationResponse](t, router, "/v1/integrations/atlassian/jira/issues/authorize", AuthorizeAtlassianJiraIssueActionRequest{
+		TenantID:  "demo",
+		SiteURL:   "https://acme.atlassian.net",
+		CloudID:   "cloud_123",
+		AccountID: "acc_123",
+		Email:     "agent@example.com",
+		Groups:    []string{"Mission Operators"},
+		IssueKey:  "FIN-77",
+		Action:    AtlassianJiraActionTransitionIssue,
+		Context:   map[string]any{"finance.close.status": "open", "risk": "low", "reversible": true},
+		Evaluation: &AtlassianEvaluationRequest{
+			MissionVersionSeen: mission.MissionVersion,
+			Actor:              AtlassianActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+			Action: AtlassianEvaluationAction{
+				Type:      "jira_issue_transition",
+				Resource:  AtlassianEvaluationActionResource{Type: "jira_issue", ID: "FIN-77"},
+				Operation: "transition",
+			},
+		},
+	})
+	if !jira.Accepted || jira.Evaluation == nil || jira.Evaluation.Decision != string(DecisionAllow) {
+		t.Fatalf("Jira authorization = %#v, want accepted allow", jira)
+	}
+	if jira.Context["atlassian.product"] != "jira" || jira.Context["jira.project_key"] != "FIN" {
+		t.Fatalf("Jira context = %#v, want product and project context", jira.Context)
+	}
+
+	confluence := postJSON[AtlassianActionAuthorizationResponse](t, router, "/v1/integrations/atlassian/confluence/pages/authorize", AuthorizeAtlassianConfluencePageActionRequest{
+		TenantID:  "demo",
+		SiteURL:   "https://acme.atlassian.net",
+		CloudID:   "cloud_123",
+		AccountID: "acc_123",
+		Email:     "agent@example.com",
+		Groups:    []string{"Mission Operators"},
+		SpaceKey:  "ENG",
+		PageID:    "12345",
+		PageTitle: "Runbook",
+		Action:    AtlassianConfluenceActionUpdatePage,
+		Context:   map[string]any{"finance.close.status": "open", "risk": "low", "reversible": true},
+		Evaluation: &AtlassianEvaluationRequest{
+			MissionVersionSeen: mission.MissionVersion,
+			Actor:              AtlassianActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+			Action: AtlassianEvaluationAction{
+				Type:      "confluence_page_update",
+				Resource:  AtlassianEvaluationActionResource{Type: "confluence_page", ID: "ENG:12345"},
+				Operation: "update",
+			},
+		},
+	})
+	if !confluence.Accepted || confluence.Evaluation == nil || confluence.Evaluation.Decision != string(DecisionAllow) {
+		t.Fatalf("Confluence authorization = %#v, want accepted allow", confluence)
+	}
+
+	denied := postJSON[AtlassianActionAuthorizationResponse](t, router, "/v1/integrations/atlassian/jira/issues/authorize", AuthorizeAtlassianJiraIssueActionRequest{
+		TenantID:  "demo",
+		SiteURL:   "https://acme.atlassian.net",
+		CloudID:   "cloud_123",
+		AccountID: "acc_123",
+		Groups:    []string{"Mission Operators"},
+		IssueKey:  "HR-9",
+		Action:    AtlassianJiraActionTransitionIssue,
+	})
+	if denied.Accepted || !contains(denied.ReasonCodes, "jira_project_not_allowed") {
+		t.Fatalf("Jira denied authorization = %#v, want project denial", denied)
+	}
+}
+
 func TestE2EGrandGovernanceFlow(t *testing.T) {
 	service := testService()
 	router := NewHandler(service).Routes()

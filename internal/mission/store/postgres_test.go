@@ -43,6 +43,7 @@ func TestMigrationNamesAreEmbeddedInOrder(t *testing.T) {
 		"migrations/009_okta_integrations.up.sql",
 		"migrations/010_entra_integrations.up.sql",
 		"migrations/011_slack_integrations.up.sql",
+		"migrations/012_atlassian_integrations.up.sql",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("MigrationNames() = %#v, want %#v", got, want)
@@ -195,6 +196,56 @@ func runStoreConformance(t *testing.T, store mission.Store) {
 	}
 	if toolDecision.Decision != mission.DecisionAllow {
 		t.Fatalf("AuthorizeToolCall decision = %s, want %s", toolDecision.Decision, mission.DecisionAllow)
+	}
+
+	atlassianBinding := mission.AtlassianSiteBinding{
+		BindingID:            "atl-postgres-1",
+		TenantID:             "demo",
+		SiteURL:              "https://acme.atlassian.net",
+		CloudID:              "cloud-acme",
+		SiteName:             "Acme Atlassian",
+		MissionRef:           missionResp.MissionRef,
+		JiraProjectKeys:      []string{"FIN"},
+		ConfluenceSpaceKeys:  []string{"ENG"},
+		AllowedJiraActions:   []string{mission.AtlassianJiraActionTransitionIssue},
+		AllowedPageActions:   []string{mission.AtlassianConfluenceActionUpdatePage},
+		RequiredGroups:       []string{"Mission Operators"},
+		GroupMatchMode:       mission.AtlassianGroupMatchAny,
+		Status:               mission.AtlassianSiteBindingStatusActive,
+		LastResolutionStatus: mission.AtlassianResolutionStatusAccepted,
+		LastSubject:          "agent@example.com",
+		CreatedAt:            testNow(),
+		LastResolvedAt:       testNow(),
+	}
+	if err := store.SaveAtlassianSiteBinding(atlassianBinding); err != nil {
+		t.Fatalf("SaveAtlassianSiteBinding: %v", err)
+	}
+	storedAtlassianBinding, err := store.GetAtlassianSiteBinding(atlassianBinding.BindingID)
+	if err != nil {
+		t.Fatalf("GetAtlassianSiteBinding: %v", err)
+	}
+	if storedAtlassianBinding.SiteURL != atlassianBinding.SiteURL || storedAtlassianBinding.MissionRef != missionResp.MissionRef {
+		t.Fatalf("Atlassian binding did not round-trip: %#v", storedAtlassianBinding)
+	}
+	storedAtlassianBinding.LastResolutionStatus = mission.AtlassianResolutionStatusDenied
+	if err := store.UpdateAtlassianSiteBinding(storedAtlassianBinding); err != nil {
+		t.Fatalf("UpdateAtlassianSiteBinding: %v", err)
+	}
+	atlassianBindings, err := store.ListAtlassianSiteBindings()
+	if err != nil {
+		t.Fatalf("ListAtlassianSiteBindings: %v", err)
+	}
+	if len(atlassianBindings) != 1 || atlassianBindings[0].LastResolutionStatus != mission.AtlassianResolutionStatusDenied {
+		t.Fatalf("Atlassian bindings = %#v, want updated binding", atlassianBindings)
+	}
+	if err := store.SaveAtlassianSiteBinding(mission.AtlassianSiteBinding{
+		BindingID:  "atl-postgres-duplicate",
+		TenantID:   atlassianBinding.TenantID,
+		SiteURL:    atlassianBinding.SiteURL,
+		MissionRef: atlassianBinding.MissionRef,
+		Status:     mission.AtlassianSiteBindingStatusActive,
+	}); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveAtlassianSiteBinding duplicate err = %v, want ErrConflict", err)
 	}
 
 	expansionEval, err := service.Evaluate(missionResp.MissionRef, mission.EvaluateRequest{

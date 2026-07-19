@@ -96,6 +96,13 @@ type ServiceNowStore interface {
 	DeleteServiceNowTicketBinding(string) error
 }
 
+type AtlassianStore interface {
+	SaveAtlassianSiteBinding(AtlassianSiteBinding) error
+	GetAtlassianSiteBinding(string) (AtlassianSiteBinding, error)
+	UpdateAtlassianSiteBinding(AtlassianSiteBinding) error
+	ListAtlassianSiteBindings() ([]AtlassianSiteBinding, error)
+}
+
 type SlackStore interface {
 	SaveSlackWorkspaceBinding(SlackWorkspaceBinding) error
 	GetSlackWorkspaceBinding(string) (SlackWorkspaceBinding, error)

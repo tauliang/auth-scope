@@ -101,6 +101,13 @@ type SlackAPI interface {
 	AuthorizeSlackMessageAction(AuthorizeSlackMessageActionRequest) (SlackMessageAuthorizationResponse, error)
 }
 
+type AtlassianAPI interface {
+	CreateAtlassianSiteBinding(CreateAtlassianSiteBindingRequest, Principal) (AtlassianSiteBinding, error)
+	ListAtlassianSiteBindings() ([]AtlassianSiteBinding, error)
+	AuthorizeAtlassianJiraIssueAction(AuthorizeAtlassianJiraIssueActionRequest) (AtlassianActionAuthorizationResponse, error)
+	AuthorizeAtlassianConfluencePageAction(AuthorizeAtlassianConfluencePageActionRequest) (AtlassianActionAuthorizationResponse, error)
+}
+
 type HandlerServices struct {
 	Identity        IdentityAPI
 	Mission         MissionAPI
@@ -113,4 +120,5 @@ type HandlerServices struct {
 	Okta            OktaAPI
 	Entra           EntraAPI
 	Slack           SlackAPI
+	Atlassian       AtlassianAPI
 }

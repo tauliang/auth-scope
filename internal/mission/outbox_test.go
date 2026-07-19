@@ -57,3 +57,13 @@ func TestOutboxPublisherContinuesAfterPublishError(t *testing.T) {
 		t.Fatalf("PublishOutboxEvents calls = %d, want at least 1", store.calls)
 	}
 }
+
+func TestMemoryStorePublishOutboxEventsIsNoop(t *testing.T) {
+	events, err := NewMemoryStore().PublishOutboxEvents()
+	if err != nil {
+		t.Fatalf("PublishOutboxEvents: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("memory outbox events = %#v, want empty", events)
+	}
+}

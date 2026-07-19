@@ -39,6 +39,7 @@ type Store interface {
 	NegotiationStore
 	ContainmentStore
 	ExpansionDecisionStore
+	ProposalApprovalStore
 	EventStore
 	OutboxStore
 	GovernanceReadStore
@@ -192,6 +193,24 @@ func (s *MemoryStore) DeleteProposal(id string) error {
 		return ErrNotFound
 	}
 	delete(s.proposals, id)
+	return nil
+}
+
+func (s *MemoryStore) CommitProposalApproval(ctx context.Context, commit ProposalApprovalCommit) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.proposals[commit.ProposalID]; !ok {
+		return ErrNotFound
+	}
+	if _, ok := s.missions[commit.Mission.MissionRef]; ok {
+		return ErrConflict
+	}
+	s.missions[commit.Mission.MissionRef] = commit.Mission
+	delete(s.proposals, commit.ProposalID)
+	s.events = append(s.events, commit.Event)
 	return nil
 }
 

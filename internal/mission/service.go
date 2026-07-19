@@ -29,6 +29,7 @@ type Service struct {
 	negotiations       NegotiationStore
 	containments       ContainmentStore
 	expansionDecisions ExpansionDecisionStore
+	proposalApprovals  ProposalApprovalStore
 	events             EventStore
 	clock              Clock
 	artifactKey        []byte
@@ -45,6 +46,7 @@ type ServiceDependencies struct {
 	Negotiations       NegotiationStore
 	Containments       ContainmentStore
 	ExpansionDecisions ExpansionDecisionStore
+	ProposalApprovals  ProposalApprovalStore
 	Events             EventStore
 	GovernanceReads    GovernanceReadStore
 	AuthorityGuard     AuthorityGuard
@@ -57,6 +59,10 @@ type containmentGuardStores struct {
 }
 
 func NewService(store Store, clock Clock) *Service {
+	return NewServiceWithArtifactKey(store, clock, nil)
+}
+
+func NewServiceWithArtifactKey(store Store, clock Clock, artifactKey []byte) *Service {
 	return NewServiceWithDependencies(ServiceDependencies{
 		Identities:         store,
 		Missions:           store,
@@ -66,8 +72,10 @@ func NewService(store Store, clock Clock) *Service {
 		Negotiations:       store,
 		Containments:       store,
 		ExpansionDecisions: store,
+		ProposalApprovals:  store,
 		Events:             store,
 		GovernanceReads:    store,
+		ArtifactKey:        artifactKey,
 	}, clock)
 }
 
@@ -81,6 +89,11 @@ func NewServiceWithDependencies(dependencies ServiceDependencies, clock Clock) *
 			GovernanceReadStore: dependencies.GovernanceReads,
 		})
 	}
+	if dependencies.ProposalApprovals == nil {
+		if approvals, ok := dependencies.Missions.(ProposalApprovalStore); ok {
+			dependencies.ProposalApprovals = approvals
+		}
+	}
 	if len(dependencies.ArtifactKey) == 0 {
 		dependencies.ArtifactKey = decisionArtifactKeyFromEnv()
 	}
@@ -93,6 +106,7 @@ func NewServiceWithDependencies(dependencies ServiceDependencies, clock Clock) *
 		negotiations:       dependencies.Negotiations,
 		containments:       dependencies.Containments,
 		expansionDecisions: dependencies.ExpansionDecisions,
+		proposalApprovals:  dependencies.ProposalApprovals,
 		events:             dependencies.Events,
 		clock:              clock,
 		artifactKey:        dependencies.ArtifactKey,
@@ -203,11 +217,7 @@ func (s *Service) ApproveProposal(id string, req ApproveProposalRequest) (Approv
 	if mission.Lifecycle.NotBefore.IsZero() {
 		mission.Lifecycle.NotBefore = now
 	}
-	if err := s.missions.SaveMission(mission); err != nil {
-		return ApproveProposalResponse{}, err
-	}
-	_ = s.missions.DeleteProposal(id)
-	_ = s.events.AppendEvent(Event{
+	event := Event{
 		EventID:      newID("mev"),
 		MissionRef:   mission.MissionRef,
 		TenantID:     mission.TenantID,
@@ -216,7 +226,26 @@ func (s *Service) ApproveProposal(id string, req ApproveProposalRequest) (Approv
 		Payload:      map[string]any{"proposal_id": id},
 		VersionAfter: mission.Version,
 		OccurredAt:   now,
-	})
+	}
+	if s.proposalApprovals != nil {
+		if err := s.proposalApprovals.CommitProposalApproval(context.Background(), ProposalApprovalCommit{
+			ProposalID: id,
+			Mission:    mission,
+			Event:      event,
+		}); err != nil {
+			return ApproveProposalResponse{}, err
+		}
+	} else {
+		if err := s.missions.SaveMission(mission); err != nil {
+			return ApproveProposalResponse{}, err
+		}
+		if err := s.missions.DeleteProposal(id); err != nil {
+			return ApproveProposalResponse{}, err
+		}
+		if err := s.events.AppendEvent(event); err != nil {
+			return ApproveProposalResponse{}, err
+		}
+	}
 
 	return ApproveProposalResponse{
 		MissionRef:     mission.MissionRef,
@@ -265,7 +294,7 @@ func (s *Service) Evaluate(ref string, req EvaluateRequest) (EvaluateResponse, e
 			HumanReason:    "The caller has stale mission state.",
 		}, now)
 	}
-	if !actionInScope(mission.AuthorityRegion, req.Action) {
+	if !actionInScopeForContext(mission.AuthorityRegion, req.Action, req.Context) {
 		if irreversible(req.Context) || highRisk(req.Context) {
 			expansion, err := s.createExpansionRequestForMission(mission, CreateExpansionRequest{
 				MissionVersionSeen: effectiveMissionVersionSeen(req.MissionVersionSeen, mission.Version),

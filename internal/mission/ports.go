@@ -68,6 +68,10 @@ type ExpansionDecisionStore interface {
 	CommitExpansionDecision(context.Context, ExpansionDecisionCommit) error
 }
 
+type ProposalApprovalStore interface {
+	CommitProposalApproval(context.Context, ProposalApprovalCommit) error
+}
+
 type EventStore interface {
 	AppendEvent(Event) error
 	Events() []Event

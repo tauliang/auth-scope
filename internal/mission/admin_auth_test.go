@@ -47,6 +47,57 @@ func TestAdminAuthenticatorFromEnvSupportsCredentialSetAndRejectsInvalidConfig(t
 	}
 }
 
+func TestProductionConfigurationRejectsUnsafeDefaults(t *testing.T) {
+	t.Setenv("AUTH_SCOPE_ADMIN_TOKEN", "")
+	t.Setenv("AUTH_SCOPE_ADMIN_SUBJECT", "")
+	t.Setenv("AUTH_SCOPE_ADMIN_ISSUER", "")
+	t.Setenv("AUTH_SCOPE_ADMIN_CREDENTIALS", "")
+	if _, err := AdminAuthenticatorFromEnvStrict(true); err == nil {
+		t.Fatal("expected production admin config to require explicit credentials")
+	}
+
+	t.Setenv("AUTH_SCOPE_ADMIN_CREDENTIALS", `[{"token":"admin-token","subject":"admin@example.com","issuer":"issuer","tenant_subject":"demo"}]`)
+	authenticator, err := AdminAuthenticatorFromEnvStrict(true)
+	if err != nil {
+		t.Fatalf("AdminAuthenticatorFromEnvStrict: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
+	req.Header.Set("Authorization", "Bearer admin-token")
+	principal, err := authenticator.Authenticate(req)
+	if err != nil || principal.TenantSubject != "demo" {
+		t.Fatalf("principal=%#v err=%v", principal, err)
+	}
+
+	t.Setenv("AUTH_SCOPE_DECISION_SECRET", "")
+	if _, err := ArtifactKeyFromEnv(true); err == nil {
+		t.Fatal("expected production artifact key to be required")
+	}
+	t.Setenv("AUTH_SCOPE_DECISION_SECRET", "dev-compose-decision-secret-change-me")
+	if _, err := ArtifactKeyFromEnv(true); err == nil {
+		t.Fatal("expected placeholder artifact key to be rejected")
+	}
+	t.Setenv("AUTH_SCOPE_DECISION_SECRET", "0123456789abcdef0123456789abcdef")
+	if _, err := ArtifactKeyFromEnv(true); err != nil {
+		t.Fatalf("valid production artifact key rejected: %v", err)
+	}
+}
+
+func TestProductionModeFromEnv(t *testing.T) {
+	t.Setenv("AUTH_SCOPE_MODE", "production")
+	if !ProductionModeFromEnv() {
+		t.Fatal("expected production mode from AUTH_SCOPE_MODE")
+	}
+	t.Setenv("AUTH_SCOPE_MODE", "")
+	t.Setenv("AUTH_SCOPE_ENV", "prod")
+	if !ProductionModeFromEnv() {
+		t.Fatal("expected production mode from AUTH_SCOPE_ENV")
+	}
+	t.Setenv("AUTH_SCOPE_ENV", "development")
+	if ProductionModeFromEnv() {
+		t.Fatal("did not expect development mode to be production")
+	}
+}
+
 func TestBearerAdminAuthenticatorRequiresConfiguredIdentity(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
 	req.Header.Set("Authorization", "Bearer token")

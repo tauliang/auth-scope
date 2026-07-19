@@ -400,6 +400,73 @@ func (s *PostgresStore) DeleteProposal(id string) error {
 	return rowsAffectedErr(result)
 }
 
+// CommitProposalApproval atomically activates a proposal and records its audit event.
+func (s *PostgresStore) CommitProposalApproval(ctx context.Context, commit mission.ProposalApprovalCommit) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("CommitProposalApproval", startTime)
+
+	missionJSON, err := json.Marshal(commit.Mission)
+	if err != nil {
+		return fmt.Errorf("marshal mission: %w", err)
+	}
+	createdAt := commit.Mission.Lifecycle.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+	now := s.clock.Now()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin proposal approval: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO missions (
+			ref, mission_id, tenant_id, state, version, principal_id, agent_id,
+			parent_mission_ref, purpose, mission_json, created_at, updated_at, expires_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`,
+		commit.Mission.MissionRef,
+		commit.Mission.MissionID,
+		commit.Mission.TenantID,
+		string(commit.Mission.State),
+		commit.Mission.Version,
+		commit.Mission.Principal.Subject,
+		commit.Mission.Agent.InstanceID,
+		nullableString(commit.Mission.Delegation.ParentMissionRef),
+		commit.Mission.Purpose.Objective,
+		missionJSON,
+		createdAt,
+		now,
+		nullableTime(commit.Mission.Lifecycle.ExpiresAt),
+	); err != nil {
+		_ = tx.Rollback()
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert mission: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM mission_proposals WHERE id = $1`, commit.ProposalID)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete proposal: %w", err)
+	}
+	if err := rowsAffectedErr(result); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := appendEventTx(ctx, tx, commit.Event); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit proposal approval: %w", err)
+	}
+	return nil
+}
+
 // SaveMission saves a mission to the database.
 func (s *PostgresStore) SaveMission(m mission.Mission) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

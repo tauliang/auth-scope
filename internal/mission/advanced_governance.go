@@ -70,6 +70,7 @@ type ProjectionStatusResponse struct {
 	ProjectionID   string    `json:"projection_id"`
 	MissionRef     string    `json:"mission_ref,omitempty"`
 	MissionVersion int       `json:"mission_version,omitempty"`
+	TenantID       string    `json:"tenant_id,omitempty"`
 	Type           string    `json:"type,omitempty"`
 	Status         string    `json:"status"`
 	ExpiresAt      time.Time `json:"expires_at,omitempty"`

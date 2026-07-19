@@ -8,6 +8,63 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Service health.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: { type: string } }
+        default: { $ref: "#/components/responses/Error" }
+  /.well-known/mission-authority:
+    get:
+      operationId: getMissionAuthorityDiscovery
+      security: []
+      responses:
+        "200":
+          description: Mission authority discovery document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /.well-known/authzen-configuration:
+    get:
+      operationId: getAuthZENDiscovery
+      security: []
+      responses:
+        "200":
+          description: AuthZEN discovery document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /access/v1/evaluation:
+    post:
+      operationId: evaluateAuthZEN
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: AuthZEN single evaluation decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /access/v1/evaluations:
+    post:
+      operationId: evaluateAuthZENBatch
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: AuthZEN batch evaluation decisions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/admin/session:
     get:
       operationId: getAdminSession
@@ -48,7 +105,165 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MissionPage" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/evaluate:
+    post:
+      operationId: evaluateMission
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Mission-scoped authorization decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/authority/negotiations:
+    post:
+      operationId: createAuthorityNegotiation
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Authority negotiation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/expansion-requests:
+    post:
+      operationId: createExpansionRequest
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Expansion request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpansionRequest" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/resume:
+    post:
+      operationId: resumeMission
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Mission resume decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/delegate:
+    post:
+      operationId: delegateMission
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Delegated child mission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/revoke:
+    post:
+      operationId: revokeMission
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Revoked mission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mission" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/complete:
+    post:
+      operationId: completeMission
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Completed mission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mission" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/introspect:
+    get:
+      operationId: introspectMission
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      responses:
+        "200":
+          description: Mission detail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mission" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/lineage:
+    get:
+      operationId: getMissionLineage
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      responses:
+        "200":
+          description: Mission lineage graph.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/projections:
+    post:
+      operationId: createProjection
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Signed external projection.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/missions/{mission_ref}/leases:
+    post:
+      operationId: createMissionLease
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/MissionRef"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Mission lease decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/mission-proposals:
+    post:
+      operationId: createMissionProposal
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Created mission proposal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
     get:
       operationId: listMissionProposals
       parameters: *listParameters
@@ -74,6 +289,22 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/MissionProposal" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/mission-proposals/{proposal_id}/approve:
+    post:
+      operationId: approveMissionProposal
+      parameters:
+        - name: proposal_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Activated mission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/expansion-requests:
     get:
       operationId: listExpansionRequests
@@ -85,7 +316,68 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ExpansionPage" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests/{expansion_id}:
+    get:
+      operationId: getExpansionRequest
+      parameters:
+        - $ref: "#/components/parameters/ExpansionID"
+      responses:
+        "200":
+          description: Expansion request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpansionRequest" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests/{expansion_id}/approve:
+    post:
+      operationId: approveExpansionRequest
+      parameters:
+        - $ref: "#/components/parameters/ExpansionID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Expansion approval decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests/{expansion_id}/deny:
+    post:
+      operationId: denyExpansionRequest
+      parameters:
+        - $ref: "#/components/parameters/ExpansionID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Expansion denial decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/expansion-requests/{expansion_id}/approvals:
+    post:
+      operationId: submitExpansionApproval
+      parameters:
+        - $ref: "#/components/parameters/ExpansionID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Recorded expansion approval.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/agents:
+    post:
+      operationId: registerAgent
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Registered agent identity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
     get:
       operationId: listAgents
       parameters: *listParameters
@@ -96,7 +388,54 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AgentPage" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/agents/{agent_id}:
+    get:
+      operationId: getAgent
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      responses:
+        "200":
+          description: Agent identity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentIdentity" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/agents/{agent_id}/revoke:
+    post:
+      operationId: revokeAgent
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Revoked agent identity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentIdentity" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/agents/{agent_id}/lineage:
+    get:
+      operationId: getAgentLineage
+      parameters:
+        - $ref: "#/components/parameters/AgentID"
+      responses:
+        "200":
+          description: Agent lineage graph.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/tool-contracts:
+    post:
+      operationId: registerToolContract
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Registered tool contract.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ToolContract" }
+        default: { $ref: "#/components/responses/Error" }
     get:
       operationId: listToolContracts
       parameters: *listParameters
@@ -106,6 +445,33 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ToolContractPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/tool-contracts/{tool_name}:
+    get:
+      operationId: getToolContract
+      parameters:
+        - name: tool_name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Tool contract.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ToolContract" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/tool-calls/authorize:
+    post:
+      operationId: authorizeToolCall
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Tool-call authorization decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
         default: { $ref: "#/components/responses/Error" }
   /v1/projections:
     get:
@@ -118,6 +484,43 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ProjectionPage" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/projections/{projection_id}/status:
+    get:
+      operationId: getProjectionStatus
+      parameters:
+        - $ref: "#/components/parameters/ProjectionID"
+      responses:
+        "200":
+          description: Projection status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/projections/{projection_id}/revoke:
+    post:
+      operationId: revokeProjection
+      parameters:
+        - $ref: "#/components/parameters/ProjectionID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Revoked projection status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/projections/verify:
+    post:
+      operationId: verifyProjection
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Projection verification result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/events:
     get:
       operationId: listEvents
@@ -128,6 +531,56 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EventPage" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/events/stream:
+    get:
+      operationId: streamEvents
+      responses:
+        "200":
+          description: Server-sent audit event stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/approval-rules:
+    post:
+      operationId: createApprovalRule
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Approval rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listApprovalRules
+      responses:
+        "200":
+          description: Approval rules.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/containment-rules:
+    post:
+      operationId: createContainmentRule
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Containment rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContainmentRule" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listContainmentRules
+      responses:
+        "200":
+          description: Containment rules.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
         default: { $ref: "#/components/responses/Error" }
   /v1/containment-rules/{rule_id}:
     get:
@@ -144,12 +597,127 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ContainmentRule" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/containment-rules/{rule_id}/lift:
+    post:
+      operationId: liftContainmentRule
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Lifted containment rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContainmentRule" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/containment-rules/{rule_id}/blast-radius:
+    get:
+      operationId: getContainmentBlastRadius
+      parameters:
+        - name: rule_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Containment blast radius.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/authority/negotiations/{negotiation_id}:
+    get:
+      operationId: getAuthorityNegotiation
+      parameters:
+        - name: negotiation_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Authority negotiation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/decision-artifacts/verify:
+    post:
+      operationId: verifyDecisionArtifact
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Decision artifact verification result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/leases/{lease_id}/refresh:
+    post:
+      operationId: refreshMissionLease
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      parameters:
+        - $ref: "#/components/parameters/LeaseID"
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Refreshed mission lease decision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
+    agentID:
+      type: apiKey
+      in: header
+      name: x-auth-scope-agent-id
+    agentNonce:
+      type: apiKey
+      in: header
+      name: x-auth-scope-nonce
+    agentSignature:
+      type: apiKey
+      in: header
+      name: x-auth-scope-signature
+  requestBodies:
+    GenericJSON:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GenericObject" }
   parameters:
+    AgentID:
+      name: agent_id
+      in: path
+      required: true
+      schema: { type: string }
+    ExpansionID:
+      name: expansion_id
+      in: path
+      required: true
+      schema: { type: string }
+    LeaseID:
+      name: lease_id
+      in: path
+      required: true
+      schema: { type: string }
+    MissionRef:
+      name: mission_ref
+      in: path
+      required: true
+      schema: { type: string }
+    ProjectionID:
+      name: projection_id
+      in: path
+      required: true
+      schema: { type: string }
     Tenant:
       name: tenant_id
       in: query
@@ -188,6 +756,9 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ApiError" }
   schemas:
+    GenericObject:
+      type: object
+      additionalProperties: true
     ApiError:
       type: object
       properties:

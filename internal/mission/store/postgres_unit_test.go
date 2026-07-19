@@ -606,6 +606,47 @@ func TestPostgresStoreCommitExpansionDecisionTransaction(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreCommitProposalApprovalTransaction(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	m := sampleMission()
+	event := sampleEvent()
+	commit := mission.ProposalApprovalCommit{
+		ProposalID: sampleProposal().ProposalID,
+		Mission:    m,
+		Event:      event,
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO missions").
+		WithArgs(
+			m.MissionRef, m.MissionID, m.TenantID, string(m.State), m.Version,
+			m.Principal.Subject, m.Agent.InstanceID, nullableString(m.Delegation.ParentMissionRef),
+			m.Purpose.Objective, sqlmock.AnyArg(), m.Lifecycle.CreatedAt, testUnitNow(), nullableTime(m.Lifecycle.ExpiresAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("DELETE FROM mission_proposals").WithArgs(commit.ProposalID).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO events").
+		WithArgs(event.EventID, event.Type, nullableString(event.MissionRef), nullableString(event.TenantID), sqlmock.AnyArg(), sqlmock.AnyArg(), event.OccurredAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO outbox_events").
+		WithArgs(event.EventID, event.Type, nullableString(event.MissionRef), sqlmock.AnyArg(), sqlmock.AnyArg(), event.OccurredAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := store.CommitProposalApproval(context.Background(), commit); err != nil {
+		t.Fatalf("CommitProposalApproval: %v", err)
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO missions").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("DELETE FROM mission_proposals").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+	if err := store.CommitProposalApproval(context.Background(), commit); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("CommitProposalApproval conflict err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestPostgresStoreCommitExpansionDecisionRollsBackOnConflictAndEventFailure(t *testing.T) {
 	store, mock, cleanup := newMockPostgresStore(t)
 	defer cleanup()

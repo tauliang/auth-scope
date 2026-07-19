@@ -9,15 +9,37 @@ import (
 )
 
 func actionInScope(region AuthorityRegion, action Action) bool {
+	return actionInScopeWithContext(region, action, nil, false)
+}
+
+func actionInScopeForContext(region AuthorityRegion, action Action, context map[string]any) bool {
+	return actionInScopeWithContext(region, action, context, true)
+}
+
+func actionInScopeWithContext(region AuthorityRegion, action Action, context map[string]any, enforceConstraints bool) bool {
 	if contains(region.ForbiddenActions, action.Operation) || contains(region.ForbiddenActions, action.Name) {
 		return false
 	}
 	for _, grant := range region.Resources {
-		if resourceMatches(grant, action.Resource) && contains(grant.Actions, action.Operation) {
+		if resourceMatches(grant, action.Resource) && contains(grant.Actions, action.Operation) &&
+			(!enforceConstraints || constraintsSatisfied(grant.Constraints, context)) {
 			return true
 		}
 	}
 	return false
+}
+
+func constraintsSatisfied(constraints map[string]any, context map[string]any) bool {
+	if len(constraints) == 0 {
+		return true
+	}
+	for key, expected := range constraints {
+		actual, ok := lookupValue(context, key)
+		if !ok || !valuesEqual(actual, expected) {
+			return false
+		}
+	}
+	return true
 }
 
 func authoritySubset(parent, child AuthorityRegion) bool {

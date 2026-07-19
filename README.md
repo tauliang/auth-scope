@@ -53,7 +53,9 @@ Run the API locally without Docker:
 go run ./cmd/auth-scope
 ```
 
-The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set.
+The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts and projection tokens are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set.
+
+Set `AUTH_SCOPE_MODE=production` or `AUTH_SCOPE_ENV=production` for fail-closed startup checks. Production mode requires `DATABASE_URL`, explicit administrator credentials, and a non-placeholder `AUTH_SCOPE_DECISION_SECRET` of at least 32 characters. The production binary also requires signed agent requests on runtime authority endpoints such as mission evaluation, AuthZEN evaluation, delegation, projections, leases, and tool-call authorization.
 
 Governance and audit endpoints require a bearer token bound to an administrator principal. Configure one administrator with `AUTH_SCOPE_ADMIN_TOKEN`, `AUTH_SCOPE_ADMIN_SUBJECT`, and `AUTH_SCOPE_ADMIN_ISSUER`, or configure multiple independent approvers with `AUTH_SCOPE_ADMIN_CREDENTIALS`:
 
@@ -61,7 +63,7 @@ Governance and audit endpoints require a bearer token bound to an administrator 
 AUTH_SCOPE_ADMIN_CREDENTIALS='[{"token":"alice-secret","subject":"alice@example.com","issuer":"https://idp.example.com"},{"token":"bob-secret","subject":"bob@example.com","issuer":"https://idp.example.com"}]' go run ./cmd/auth-scope
 ```
 
-The request body cannot select its approver or containment administrator. The service derives that identity from the bearer credential. Docker Compose includes development-only Alice and Bob credentials; use `dev-compose-admin-alice` and `dev-compose-admin-bob` when exercising the examples locally.
+The request body cannot select its approver, containment administrator, or tenant when the administrator credential is tenant-bound. The service derives those identities from the bearer credential. Docker Compose includes development-only Alice and Bob credentials; use `dev-compose-admin-alice` and `dev-compose-admin-bob` when exercising the examples locally.
 
 The Compose credentials are intentionally local-only. A production deployment should place the console and API behind the organization authentication boundary and supply administrator credentials from its identity integration; do not ship the static development tokens.
 
@@ -187,7 +189,7 @@ GET  /v1/events
 GET  /v1/events/stream
 ```
 
-The OpenAPI file at [`openapi/auth-scope-v1.yaml`](openapi/auth-scope-v1.yaml) is the frontend contract subset used to generate TypeScript declarations. The route inventory above reflects the full MVP HTTP surface.
+The OpenAPI file at [`openapi/auth-scope-v1.yaml`](openapi/auth-scope-v1.yaml) documents the full MVP HTTP route inventory and is used to generate the frontend TypeScript declarations.
 
 ## Example
 
@@ -201,6 +203,7 @@ Register an agent identity. `public_key` is a base64url-encoded raw Ed25519 publ
 
 ```sh
 curl -s http://localhost:8080/v1/agents \
+  -H "authorization: Bearer $ADMIN_TOKEN" \
   -H 'content-type: application/json' \
   -d '{
     "tenant_id": "demo",
@@ -231,6 +234,7 @@ Create a proposal:
 
 ```sh
 curl -s http://localhost:8080/v1/mission-proposals \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
   -H 'content-type: application/json' \
   -d '{
     "tenant_id": "demo",
@@ -255,10 +259,13 @@ curl -s http://localhost:8080/v1/mission-proposals/{proposal_id}/approve \
   -d '{"approval_evidence": {"method": "demo"}}'
 ```
 
-Evaluate an action:
+Evaluate an action. Runtime authority endpoints require signed agent headers: `x-auth-scope-agent-id`, `x-auth-scope-nonce`, and `x-auth-scope-signature`.
 
 ```sh
 curl -s http://localhost:8080/v1/missions/{mission_ref}/evaluate \
+  -H 'x-auth-scope-agent-id: {agent_id}' \
+  -H 'x-auth-scope-nonce: {nonce}' \
+  -H 'x-auth-scope-signature: {signature}' \
   -H 'content-type: application/json' \
   -d '{
     "mission_version_seen": 1,
@@ -283,6 +290,9 @@ Negotiate a requested authority change before creating an expansion. Fully safe 
 
 ```sh
 curl -s http://localhost:8080/v1/missions/{mission_ref}/authority/negotiations \
+  -H 'x-auth-scope-agent-id: {agent_id}' \
+  -H 'x-auth-scope-nonce: {nonce}' \
+  -H 'x-auth-scope-signature: {signature}' \
   -H 'content-type: application/json' \
   -d '{
     "mission_version_seen": 1,
@@ -317,6 +327,9 @@ curl -s http://localhost:8080/v1/tool-contracts \
   }'
 
 curl -s http://localhost:8080/v1/tool-calls/authorize \
+  -H 'x-auth-scope-agent-id: {agent_id}' \
+  -H 'x-auth-scope-nonce: {nonce}' \
+  -H 'x-auth-scope-signature: {signature}' \
   -H 'content-type: application/json' \
   -d '{
     "mission_ref": "{mission_ref}",

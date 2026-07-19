@@ -87,15 +87,6 @@ type EntraStore interface {
 	ListEntraAppRegistrations() ([]EntraAppRegistration, error)
 }
 
-type ServiceNowStore interface {
-	SaveServiceNowTicketBinding(ServiceNowTicketBinding) error
-	GetServiceNowTicketBinding(string) (ServiceNowTicketBinding, error)
-	GetServiceNowTicketBindingByMissionRefAndSysID(string, string) (ServiceNowTicketBinding, error)
-	ListServiceNowTicketBindings() ([]ServiceNowTicketBinding, error)
-	UpdateServiceNowTicketBinding(ServiceNowTicketBinding) error
-	DeleteServiceNowTicketBinding(string) error
-}
-
 type SlackStore interface {
 	SaveSlackWorkspaceBinding(SlackWorkspaceBinding) error
 	GetSlackWorkspaceBinding(string) (SlackWorkspaceBinding, error)

@@ -55,8 +55,8 @@ type oktaEvaluator struct {
 	service *Service
 }
 
-func (e oktaEvaluator) Evaluate(missionRef string, req oktaint.EvaluationRequest, context map[string]any) (oktaint.EvaluationResponse, error) {
-	resp, err := e.service.Evaluate(missionRef, EvaluateRequest{
+func (e oktaEvaluator) Evaluate(req oktaint.EvaluationRequest) (oktaint.EvaluationResponse, error) {
+	resp, err := e.service.Evaluate(req.MissionRef, EvaluateRequest{
 		MissionVersionSeen: req.MissionVersionSeen,
 		Actor:              missionActorFromOkta(req.Actor),
 		Action: Action{
@@ -68,7 +68,7 @@ func (e oktaEvaluator) Evaluate(missionRef string, req oktaint.EvaluationRequest
 			},
 			Operation: req.Action.Operation,
 		},
-		Context: context,
+		Context: req.Context,
 	})
 	if err != nil {
 		return oktaint.EvaluationResponse{}, err

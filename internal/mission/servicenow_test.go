@@ -123,7 +123,7 @@ func TestServiceNowMissionAdapterLifecycleAndEvaluation(t *testing.T) {
 	if binding.ServiceNowSysID != "sys_123" || binding.MissionRef != mission.MissionRef {
 		t.Fatalf("unexpected ServiceNow binding: %#v", binding)
 	}
-	if len(baseStore.Events()) == 0 || baseStore.Events()[len(baseStore.Events())-1].Type != "ticket_binding.created" {
+	if len(baseStore.Events()) == 0 || baseStore.Events()[len(baseStore.Events())-1].Type != "servicenow.ticket_bound" {
 		t.Fatalf("expected ServiceNow create event, got %#v", baseStore.Events())
 	}
 

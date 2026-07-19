@@ -7,58 +7,43 @@ import (
 )
 
 func (s *Service) CreateServiceNowTicketBinding(ctx context.Context, req CreateServiceNowTicketBindingRequest, actor Principal) (ServiceNowTicketBinding, error) {
-	resp, err := s.servicenowIntegration().CreateTicketBinding(ctx, &snint.CreateTicketBindingRequest{
-		TenantID:        req.TenantID,
-		InstanceURL:     req.InstanceURL,
-		ServiceNowSysID: req.ServiceNowSysID,
-		State:           req.State,
-		MissionRef:      req.MissionRef,
-		AssignmentGroup: req.AssignmentGroup,
-		CallerID:        req.CallerID,
-		RequiredGroups:  req.RequiredGroups,
-		AdminGroups:     req.AdminGroups,
-		AllowedSubjects: req.AllowedSubjects,
-		GroupClaim:      req.GroupClaim,
-		SubjectClaim:    req.SubjectClaim,
-		GroupMatchMode:  req.GroupMatchMode,
-		Metadata:        req.Metadata,
-	})
+	resp, err := s.servicenowIntegration().CreateTicketBinding(snint.CreateTicketBindingRequest{
+		TenantID:         req.TenantID,
+		InstanceURL:      req.InstanceURL,
+		ServiceNowSysID:  req.ServiceNowSysID,
+		ServiceNowNumber: req.ServiceNowNumber,
+		State:            req.State,
+		MissionRef:       req.MissionRef,
+		AssignmentGroup:  req.AssignmentGroup,
+		CallerID:         req.CallerID,
+		RequiredGroups:   req.RequiredGroups,
+		AdminGroups:      req.AdminGroups,
+		AllowedSubjects:  req.AllowedSubjects,
+		GroupClaim:       req.GroupClaim,
+		SubjectClaim:     req.SubjectClaim,
+		GroupMatchMode:   req.GroupMatchMode,
+		Metadata:         req.Metadata,
+	}, serviceNowPrincipal(actor))
 	if err != nil {
 		return ServiceNowTicketBinding{}, err
 	}
-	return *resp, nil
+	return resp, nil
 }
 
 func (s *Service) ListServiceNowTicketBindings(ctx context.Context) ([]ServiceNowTicketBinding, error) {
-	resp, err := s.servicenowIntegration().ListTicketBindingsByMissionRef(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	result := make([]ServiceNowTicketBinding, len(resp))
-	for i, b := range resp {
-		result[i] = *b
-	}
-	return result, nil
+	return s.servicenowIntegration().ListTicketBindings()
 }
 
 func (s *Service) GetServiceNowTicketBinding(ctx context.Context, bindingID string) (ServiceNowTicketBinding, error) {
-	resp, err := s.servicenowIntegration().GetTicketBinding(ctx, bindingID)
-	if err != nil {
-		return ServiceNowTicketBinding{}, err
-	}
-	return *resp, nil
+	return s.servicenowIntegration().GetTicketBinding(bindingID)
 }
 
 func (s *Service) UpdateServiceNowTicketStatus(ctx context.Context, bindingID string, newState string) (ServiceNowTicketBinding, error) {
-	resp, err := s.servicenowIntegration().UpdateTicketStatus(ctx, bindingID, newState)
-	if err != nil {
-		return ServiceNowTicketBinding{}, err
-	}
-	return *resp, nil
+	return s.servicenowIntegration().UpdateTicketStatus(bindingID, newState)
 }
 
 func (s *Service) ResolveServiceNowAuthorityContext(ctx context.Context, req ResolveServiceNowAuthorityContextRequest) (ServiceNowAuthorityContextResponse, error) {
-	resp, err := s.servicenowIntegration().ResolveAuthorityContext(ctx, &snint.ResolveAuthorityContextRequest{
+	resolveReq := snint.ResolveAuthorityContextRequest{
 		MissionRef: req.MissionRef,
 		TenantID:   req.TenantID,
 		Issuer:     req.Issuer,
@@ -67,40 +52,29 @@ func (s *Service) ResolveServiceNowAuthorityContext(ctx context.Context, req Res
 		Groups:     req.Groups,
 		Claims:     req.Claims,
 		Context:    req.Context,
-		Evaluation: &snint.EvaluationRequest{
-			MissionVersionSeen: req.Evaluation.MissionVersionSeen,
-			Actor: snint.Actor{
-				AgentInstanceID: req.Evaluation.Actor.AgentInstanceID,
-				ClientID:        req.Evaluation.Actor.ClientID,
-				KeyThumbprint:   req.Evaluation.Actor.KeyThumbprint,
-			},
-			Action: snint.EvaluationAction{
-				Type: req.Evaluation.Action.Type,
-				Name: req.Evaluation.Action.Name,
-				Resource: snint.EvaluationActionResource{
-					Type: req.Evaluation.Action.Resource.Type,
-					ID:   req.Evaluation.Action.Resource.ID,
-				},
-				Operation: req.Evaluation.Action.Operation,
-			},
-		},
-	})
+	}
+	if req.Evaluation != nil {
+		evalReq := *req.Evaluation
+		resolveReq.Evaluation = &evalReq
+	}
+	resp, err := s.servicenowIntegration().ResolveAuthorityContext(resolveReq)
 	if err != nil {
 		return ServiceNowAuthorityContextResponse{}, err
 	}
-	return *resp, nil
+	return resp, nil
 }
 
 func (s *Service) DeleteServiceNowTicketBinding(ctx context.Context, bindingID string) error {
-	return s.servicenowIntegration().DeleteTicketBinding(ctx, bindingID)
+	return s.servicenowIntegration().DeleteTicketBinding(bindingID)
 }
 
 func (s *Service) servicenowIntegration() *snint.Service {
-	return snint.NewService(&snint.Config{
+	return snint.NewService(snint.Config{
 		Store:     serviceNowStoreAdapter{store: s.servicenow},
 		Evaluator: serviceNowEvaluator{service: s},
-		EventSink: serviceNowEventSink{events: s.events},
+		Events:    serviceNowEventSink{events: s.events},
 		Clock:     s.clock,
+		NewID:     newID,
 	})
 }
 
@@ -108,43 +82,23 @@ type serviceNowStoreAdapter struct {
 	store ServiceNowStore
 }
 
-func (a serviceNowStoreAdapter) CreateTicketBinding(ctx context.Context, binding *snint.TicketBinding) error {
-	return a.store.SaveServiceNowTicketBinding(*binding)
+func (a serviceNowStoreAdapter) SaveTicketBinding(binding snint.TicketBinding) error {
+	return a.store.SaveServiceNowTicketBinding(binding)
 }
 
-func (a serviceNowStoreAdapter) GetTicketBindingByID(ctx context.Context, bindingID string) (*snint.TicketBinding, error) {
-	binding, err := a.store.GetServiceNowTicketBinding(bindingID)
-	if err != nil {
-		return nil, err
-	}
-	return &binding, nil
+func (a serviceNowStoreAdapter) GetTicketBinding(bindingID string) (snint.TicketBinding, error) {
+	return a.store.GetServiceNowTicketBinding(bindingID)
 }
 
-func (a serviceNowStoreAdapter) GetTicketBindingByMissionRefAndSysID(ctx context.Context, missionRef, sysID string) (*snint.TicketBinding, error) {
-	binding, err := a.store.GetServiceNowTicketBindingByMissionRefAndSysID(missionRef, sysID)
-	if err != nil {
-		return nil, err
-	}
-	return &binding, nil
+func (a serviceNowStoreAdapter) ListTicketBindings() ([]snint.TicketBinding, error) {
+	return a.store.ListServiceNowTicketBindings()
 }
 
-func (a serviceNowStoreAdapter) ListTicketBindingsByMissionRef(ctx context.Context, missionRef string) ([]*snint.TicketBinding, error) {
-	bindings, err := a.store.ListServiceNowTicketBindings()
-	if err != nil {
-		return nil, err
-	}
-	result := make([]*snint.TicketBinding, len(bindings))
-	for i, b := range bindings {
-		result[i] = &b
-	}
-	return result, nil
+func (a serviceNowStoreAdapter) UpdateTicketBinding(binding snint.TicketBinding) error {
+	return a.store.UpdateServiceNowTicketBinding(binding)
 }
 
-func (a serviceNowStoreAdapter) UpdateTicketBinding(ctx context.Context, binding *snint.TicketBinding) error {
-	return a.store.UpdateServiceNowTicketBinding(*binding)
-}
-
-func (a serviceNowStoreAdapter) DeleteTicketBinding(ctx context.Context, bindingID string) error {
+func (a serviceNowStoreAdapter) DeleteTicketBinding(bindingID string) error {
 	return a.store.DeleteServiceNowTicketBinding(bindingID)
 }
 
@@ -152,28 +106,30 @@ type serviceNowEvaluator struct {
 	service *Service
 }
 
-func (e serviceNowEvaluator) EvaluateAuthorityContext(ctx context.Context, req *snint.ResolveAuthorityContextRequest) (*snint.AuthorityContextResponse, error) {
+func (e serviceNowEvaluator) Evaluate(req snint.EvaluationRequest) (snint.EvaluationResponse, error) {
 	resp, err := e.service.Evaluate(req.MissionRef, EvaluateRequest{
-		MissionVersionSeen: req.Evaluation.MissionVersionSeen,
-		Actor:              missionActorFromServiceNow(req.Evaluation.Actor),
+		MissionVersionSeen: req.MissionVersionSeen,
+		Actor:              missionActorFromServiceNow(req.Actor),
 		Action: Action{
-			Type:      req.Evaluation.Action.Type,
-			Name:      req.Evaluation.Action.Name,
-			Resource:  actionResourceFromServiceNow(req.Evaluation.Action.Resource),
-			Operation: req.Evaluation.Action.Operation,
+			Type:      req.Action.Type,
+			Name:      req.Action.Name,
+			Resource:  actionResourceFromServiceNow(req.Action.Resource),
+			Operation: req.Action.Operation,
 		},
 		Context: req.Context,
 	})
 	if err != nil {
-		return nil, err
+		return snint.EvaluationResponse{}, err
 	}
 
-	return &snint.AuthorityContextResponse{
-		Accepted:    resp.Decision == DecisionAllow,
-		Status:      snint.ResolutionStatusAccepted,
-		MissionRef:  resp.MissionRef,
-		ReasonCodes: resp.ReasonCodes,
-		HumanReason: resp.HumanReason,
+	return snint.EvaluationResponse{
+		Decision:         string(resp.Decision),
+		MissionRef:       resp.MissionRef,
+		MissionVersion:   resp.MissionVersion,
+		ReasonCodes:      resp.ReasonCodes,
+		HumanReason:      resp.HumanReason,
+		DecisionArtifact: resp.DecisionArtifact,
+		Constraints:      resp.Constraints,
 	}, nil
 }
 
@@ -181,7 +137,10 @@ type serviceNowEventSink struct {
 	events EventStore
 }
 
-func (s serviceNowEventSink) PublishEvent(ctx context.Context, event *snint.Event) error {
+func (s serviceNowEventSink) AppendEvent(event snint.Event) error {
+	if s.events == nil {
+		return nil
+	}
 	return s.events.AppendEvent(Event{
 		EventID:       event.EventID,
 		MissionRef:    event.MissionRef,

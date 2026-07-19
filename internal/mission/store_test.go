@@ -96,6 +96,50 @@ func TestMemoryStoreIntegrationBindingsAreSortedAndConflictChecked(t *testing.T)
 	if err := store.SaveSlackWorkspaceBinding(SlackWorkspaceBinding{BindingID: "slack-3", TenantID: slackOne.TenantID, WorkspaceID: slackOne.WorkspaceID, MissionRef: slackOne.MissionRef, Status: SlackWorkspaceBindingStatusActive}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("SaveSlackWorkspaceBinding duplicate err = %v, want ErrConflict", err)
 	}
+
+	atlassianOne := AtlassianSiteBinding{BindingID: "atl-1", TenantID: "demo", SiteURL: "https://a.atlassian.net", CloudID: "cloud-a", MissionRef: "mref-2", Status: AtlassianSiteBindingStatusActive}
+	atlassianTwo := AtlassianSiteBinding{BindingID: "atl-2", TenantID: "demo", SiteURL: "https://b.atlassian.net", CloudID: "cloud-b", MissionRef: "mref-1", Status: AtlassianSiteBindingStatusActive}
+	if err := store.SaveAtlassianSiteBinding(atlassianTwo); err != nil {
+		t.Fatalf("SaveAtlassianSiteBinding second: %v", err)
+	}
+	if err := store.SaveAtlassianSiteBinding(atlassianOne); err != nil {
+		t.Fatalf("SaveAtlassianSiteBinding first: %v", err)
+	}
+	atlassianList, err := store.ListAtlassianSiteBindings()
+	if err != nil {
+		t.Fatalf("ListAtlassianSiteBindings: %v", err)
+	}
+	if atlassianList[0].BindingID != "atl-1" || atlassianList[1].BindingID != "atl-2" {
+		t.Fatalf("Atlassian bindings not sorted: %#v", atlassianList)
+	}
+	if err := store.SaveAtlassianSiteBinding(AtlassianSiteBinding{BindingID: "atl-3", TenantID: atlassianOne.TenantID, SiteURL: atlassianOne.SiteURL, MissionRef: atlassianOne.MissionRef, Status: AtlassianSiteBindingStatusActive}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("SaveAtlassianSiteBinding duplicate site err = %v, want ErrConflict", err)
+	}
+	if err := store.SaveAtlassianSiteBinding(AtlassianSiteBinding{BindingID: "atl-4", TenantID: atlassianTwo.TenantID, SiteURL: "https://c.atlassian.net", CloudID: atlassianTwo.CloudID, MissionRef: atlassianTwo.MissionRef, Status: AtlassianSiteBindingStatusActive}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("SaveAtlassianSiteBinding duplicate cloud err = %v, want ErrConflict", err)
+	}
+
+	salesforceOne := SalesforceOrgBinding{BindingID: "sf-1", TenantID: "demo", InstanceURL: "https://a.my.salesforce.com", OrgID: "00DA", MissionRef: "mref-2", Status: SalesforceOrgBindingStatusActive}
+	salesforceTwo := SalesforceOrgBinding{BindingID: "sf-2", TenantID: "demo", InstanceURL: "https://b.my.salesforce.com", OrgID: "00DB", MissionRef: "mref-1", Status: SalesforceOrgBindingStatusActive}
+	if err := store.SaveSalesforceOrgBinding(salesforceTwo); err != nil {
+		t.Fatalf("SaveSalesforceOrgBinding second: %v", err)
+	}
+	if err := store.SaveSalesforceOrgBinding(salesforceOne); err != nil {
+		t.Fatalf("SaveSalesforceOrgBinding first: %v", err)
+	}
+	salesforceList, err := store.ListSalesforceOrgBindings()
+	if err != nil {
+		t.Fatalf("ListSalesforceOrgBindings: %v", err)
+	}
+	if salesforceList[0].BindingID != "sf-1" || salesforceList[1].BindingID != "sf-2" {
+		t.Fatalf("Salesforce bindings not sorted: %#v", salesforceList)
+	}
+	if err := store.SaveSalesforceOrgBinding(SalesforceOrgBinding{BindingID: "sf-3", TenantID: salesforceOne.TenantID, InstanceURL: salesforceOne.InstanceURL, MissionRef: salesforceOne.MissionRef, Status: SalesforceOrgBindingStatusActive}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("SaveSalesforceOrgBinding duplicate instance err = %v, want ErrConflict", err)
+	}
+	if err := store.SaveSalesforceOrgBinding(SalesforceOrgBinding{BindingID: "sf-4", TenantID: salesforceTwo.TenantID, InstanceURL: "https://c.my.salesforce.com", OrgID: salesforceTwo.OrgID, MissionRef: salesforceTwo.MissionRef, Status: SalesforceOrgBindingStatusActive}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("SaveSalesforceOrgBinding duplicate org err = %v, want ErrConflict", err)
+	}
 }
 
 func TestMemoryStoreExpansionDecisionIsAtomicAndVersioned(t *testing.T) {

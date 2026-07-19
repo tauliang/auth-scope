@@ -55,8 +55,8 @@ type entraEvaluator struct {
 	service *Service
 }
 
-func (e entraEvaluator) Evaluate(missionRef string, req entraint.EvaluationRequest, context map[string]any) (entraint.EvaluationResponse, error) {
-	resp, err := e.service.Evaluate(missionRef, EvaluateRequest{
+func (e entraEvaluator) Evaluate(req entraint.EvaluationRequest) (entraint.EvaluationResponse, error) {
+	resp, err := e.service.Evaluate(req.MissionRef, EvaluateRequest{
 		MissionVersionSeen: req.MissionVersionSeen,
 		Actor:              missionActorFromEntra(req.Actor),
 		Action: Action{
@@ -68,7 +68,7 @@ func (e entraEvaluator) Evaluate(missionRef string, req entraint.EvaluationReque
 			},
 			Operation: req.Action.Operation,
 		},
-		Context: context,
+		Context: req.Context,
 	})
 	if err != nil {
 		return entraint.EvaluationResponse{}, err

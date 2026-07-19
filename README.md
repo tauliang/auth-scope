@@ -24,6 +24,7 @@ The first slice is intentionally small and runnable:
 - Mission and agent lineage graphs for accountability tracing
 - GitHub repository and check-run integration hooks for coding-agent PR governance
 - Okta application/group binding and claim-to-authority context resolution
+- Microsoft Entra app registration/group binding and claim-to-authority context resolution
 - Resume checks for agent harnesses
 - Strict-subset delegation for child missions
 - Cascade revocation/completion semantics
@@ -55,7 +56,7 @@ Run the API locally without Docker:
 go run ./cmd/auth-scope
 ```
 
-The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts and projection tokens are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set. GitHub webhooks are verified with `AUTH_SCOPE_GITHUB_WEBHOOK_SECRET` or `GITHUB_WEBHOOK_SECRET` when the GitHub integration endpoints are enabled. Okta bindings resolve already-verified Okta OIDC claims into mission authority context and do not require a live Okta network dependency in the runtime hot path.
+The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts and projection tokens are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set. GitHub webhooks are verified with `AUTH_SCOPE_GITHUB_WEBHOOK_SECRET` or `GITHUB_WEBHOOK_SECRET` when the GitHub integration endpoints are enabled. Okta and Microsoft Entra bindings resolve already-verified OIDC claims into mission authority context and do not require a live identity-provider network dependency in the runtime hot path.
 
 Set `AUTH_SCOPE_MODE=production` or `AUTH_SCOPE_ENV=production` for fail-closed startup checks. Production mode requires `DATABASE_URL`, explicit administrator credentials, and a non-placeholder `AUTH_SCOPE_DECISION_SECRET` of at least 32 characters. The production binary also requires signed agent requests on runtime authority endpoints such as mission evaluation, AuthZEN evaluation, delegation, projections, leases, and tool-call authorization.
 
@@ -188,6 +189,9 @@ POST /v1/integrations/github/check-runs/plan
 POST /v1/integrations/okta/app-bindings
 GET  /v1/integrations/okta/app-bindings
 POST /v1/integrations/okta/authority-context/resolve
+POST /v1/integrations/entra/app-registrations
+GET  /v1/integrations/entra/app-registrations
+POST /v1/integrations/entra/authority-context/resolve
 POST /v1/missions/{mission_ref}/leases
 POST /v1/leases/{lease_id}/refresh
 POST /v1/approval-rules
@@ -515,6 +519,51 @@ curl -s http://localhost:8080/v1/integrations/okta/authority-context/resolve \
   }'
 ```
 
+Bind a Microsoft Entra app registration and group allowlist to a mission in the same pattern:
+
+```sh
+curl -s http://localhost:8080/v1/integrations/entra/app-registrations \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
+  -d '{
+    "tenant_id": "demo",
+    "issuer": "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0",
+    "client_id": "00000000-0000-0000-0000-000000000000",
+    "app_id": "app_entra_001",
+    "app_name": "Auth Scope Console",
+    "mission_ref": "{mission_ref}",
+    "required_groups": ["Mission Operators"],
+    "admin_groups": ["Mission Admins"],
+    "group_match_mode": "any"
+  }'
+```
+
+After a gateway verifies the Entra token signature and audience, it can resolve `iss`, `appid`/`azp`/`aud`, `sub`, `groups`, and `roles` claims into mission context:
+
+```sh
+curl -s http://localhost:8080/v1/integrations/entra/authority-context/resolve \
+  -H 'content-type: application/json' \
+  -d '{
+    "claims": {
+      "iss": "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0",
+      "azp": "00000000-0000-0000-0000-000000000000",
+      "sub": "user@example.onmicrosoft.com",
+      "groups": ["Mission Operators"],
+      "roles": ["Reader"]
+    },
+    "context": {"risk": "low", "reversible": true},
+    "evaluation": {
+      "mission_version_seen": 1,
+      "actor": {"agent_instance_id": "inst_123", "client_id": "research-agent"},
+      "action": {
+        "type": "tool_call",
+        "resource": {"type": "drive_folder", "id": "board"},
+        "operation": "read"
+      }
+    }
+  }'
+```
+
 Create a containment rule during an incident. Active containment blocks evaluation, manual expansion, delegation, projection issuance/verification, lease creation/refresh, and resume when the mission, tenant, agent, principal, tool, or resource matches:
 
 ```sh
@@ -561,4 +610,4 @@ curl -s http://localhost:8080/access/v1/evaluation \
 
 ## MVP Boundary
 
-This branch now includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, GitHub repository/check-run integration hooks, and Okta app/group authority-context integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, adding live JWKS/introspection verification where the gateway does not already verify Okta tokens, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.
+This branch now includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, GitHub repository/check-run integration hooks, Okta app/group authority-context integration hooks, and Microsoft Entra app/group authority-context integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, adding live JWKS/introspection verification where the gateway does not already verify identity-provider tokens, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.

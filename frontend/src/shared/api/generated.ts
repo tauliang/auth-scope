@@ -692,6 +692,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/integrations/entra/app-registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listEntraAppRegistrations"];
+        put?: never;
+        post: operations["createEntraAppRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/entra/authority-context/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolveEntraAuthorityContext"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -1112,6 +1144,112 @@ export interface components {
             subject?: string;
             groups?: string[];
             scopes?: string[];
+            admin: boolean;
+            reason_codes?: string[];
+            human_reason?: string;
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: {
+                [key: string]: unknown;
+            };
+            resolved_at?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CreateEntraAppRegistrationRequest: {
+            tenant_id?: string;
+            tenant_name?: string;
+            /** @description Microsoft Entra issuer, for example https://login.microsoftonline.com/{tenant}/v2.0. */
+            issuer: string;
+            client_id: string;
+            app_id?: string;
+            app_name?: string;
+            mission_ref: string;
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            roles_claim?: string;
+            /** @enum {string} */
+            group_match_mode?: "any" | "all";
+            metadata?: {
+                [key: string]: string;
+            };
+        };
+        EntraAppRegistration: {
+            registration_id: string;
+            tenant_id?: string;
+            tenant_name?: string;
+            issuer: string;
+            discovery_url?: string;
+            jwks_uri?: string;
+            client_id: string;
+            app_id?: string;
+            app_name?: string;
+            mission_ref: string;
+            required_groups?: string[];
+            admin_groups?: string[];
+            allowed_subjects?: string[];
+            group_claim?: string;
+            subject_claim?: string;
+            roles_claim?: string;
+            group_match_mode?: string;
+            status: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_resolved_at?: string;
+            last_subject?: string;
+            last_resolution_status?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        EntraEvaluationRequest: {
+            mission_version_seen?: number;
+            actor: {
+                [key: string]: unknown;
+            };
+            action: {
+                type?: string;
+                name?: string;
+                resource?: {
+                    type: string;
+                    id: string;
+                };
+                operation?: string;
+            } & {
+                [key: string]: unknown;
+            };
+        };
+        ResolveEntraAuthorityContextRequest: {
+            tenant_id?: string;
+            mission_ref?: string;
+            issuer?: string;
+            client_id?: string;
+            subject?: string;
+            groups?: string[];
+            roles?: string[];
+            claims?: {
+                [key: string]: unknown;
+            };
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: components["schemas"]["EntraEvaluationRequest"];
+        };
+        EntraAuthorityContextResponse: {
+            accepted: boolean;
+            status: string;
+            registration_id?: string;
+            tenant_id?: string;
+            mission_ref?: string;
+            issuer?: string;
+            client_id?: string;
+            subject?: string;
+            groups?: string[];
+            roles?: string[];
             admin: boolean;
             reason_codes?: string[];
             human_reason?: string;
@@ -2337,6 +2475,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OktaAuthorityContextResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listEntraAppRegistrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entra application registration bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        app_registrations: components["schemas"]["EntraAppRegistration"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createEntraAppRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEntraAppRegistrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Entra application registration binding. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntraAppRegistration"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    resolveEntraAuthorityContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveEntraAuthorityContextRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical mission authority context resolved from verified Entra claims. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntraAuthorityContextResponse"];
                 };
             };
             default: components["responses"]["Error"];

@@ -6,72 +6,94 @@ import (
 	"strings"
 )
 
-// NormalizeIssuer normalizes and validates an Azure Entra issuer URL
 func NormalizeIssuer(issuer string) (string, error) {
+	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
 	if issuer == "" {
 		return "", fmt.Errorf("issuer is required")
 	}
-	issues := strings.TrimSpace(issuer)
-	u, err := url.Parse(issues)
-	if err != nil {
-		return "", fmt.Errorf("invalid issuer URL: %w", err)
+	parsed, err := url.Parse(issuer)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("issuer must be an absolute URL")
 	}
-	if u.Scheme != "https" {
+	if parsed.Scheme != "https" {
 		return "", fmt.Errorf("issuer must use https scheme")
 	}
-	// Normalize by removing trailing slash
-	normalized := strings.TrimSuffix(issues, "/")
-	return normalized, nil
+	return issuer, nil
 }
 
-// DiscoveryURL returns the standard Entra discovery endpoint for an issuer
 func DiscoveryURL(issuer string) string {
+	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
+	if issuer == "" {
+		return ""
+	}
 	return issuer + "/.well-known/openid-configuration"
 }
 
-// JWKSURI returns the standard Entra JWKS endpoint for an issuer
 func JWKSURI(issuer string) string {
-	return issuer + "/discovery/v2.0/keys"
-}
-
-// ExtractClaimContext extracts claims from a resolution request and registration
-func ExtractClaimContext(req ResolveAuthorityContextRequest, reg AppRegistration) (issuer, clientID, subject string, groups, roles []string, err error) {
-	issuer = firstString(req.Issuer, StringClaim(req.Claims, "iss"))
-	clientID = firstString(req.ClientID, StringClaim(req.Claims, "appid"), StringClaim(req.Claims, "client_id"))
-	subject = firstString(req.Subject, StringClaim(req.Claims, reg.SubjectClaim))
-
-	if subject == "" {
-		return "", "", "", nil, nil, fmt.Errorf("subject is required")
-	}
-
-	groups = firstStringList(req.Groups, StringListClaim(req.Claims, reg.GroupClaim))
-	roles = firstStringList(req.Roles, StringListClaim(req.Claims, reg.RolesClaim))
-
-	return
-}
-
-// StringClaim extracts a string claim from claims map
-func StringClaim(claims map[string]any, key string) string {
-	if claims == nil {
+	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
+	parsed, err := url.Parse(issuer)
+	if err != nil || parsed.Host == "" {
 		return ""
 	}
-	if v, ok := claims[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
+	path := strings.TrimSuffix(parsed.Path, "/v2.0")
+	return parsed.Scheme + "://" + parsed.Host + path + "/discovery/v2.0/keys"
+}
+
+func ExtractClaimContext(req ResolveAuthorityContextRequest, reg AppRegistration) (issuer, clientID, subject string, groups, roles []string, err error) {
+	issuer = firstString(req.Issuer, StringClaim(req.Claims, "iss"))
+	issuer, err = NormalizeIssuer(issuer)
+	if err != nil {
+		return "", "", "", nil, nil, err
+	}
+	clientID = firstString(req.ClientID, StringClaim(req.Claims, "appid"), StringClaim(req.Claims, "azp"), StringClaim(req.Claims, "client_id"), AudienceClaim(req.Claims))
+	if strings.TrimSpace(clientID) == "" {
+		return "", "", "", nil, nil, fmt.Errorf("client_id is required")
+	}
+	subjectClaim := reg.SubjectClaim
+	if subjectClaim == "" {
+		subjectClaim = "sub"
+	}
+	subject = firstString(req.Subject, StringClaim(req.Claims, subjectClaim), StringClaim(req.Claims, "oid"), StringClaim(req.Claims, "sub"))
+	if strings.TrimSpace(subject) == "" {
+		return "", "", "", nil, nil, fmt.Errorf("subject is required")
+	}
+	groupClaim := reg.GroupClaim
+	if groupClaim == "" {
+		groupClaim = "groups"
+	}
+	rolesClaim := reg.RolesClaim
+	if rolesClaim == "" {
+		rolesClaim = "roles"
+	}
+	groups = CleanStringList(req.Groups)
+	if len(groups) == 0 {
+		groups = StringListClaim(req.Claims, groupClaim)
+	}
+	roles = CleanStringList(req.Roles)
+	if len(roles) == 0 {
+		roles = StringListClaim(req.Claims, rolesClaim)
+	}
+	return issuer, strings.TrimSpace(clientID), strings.TrimSpace(subject), groups, roles, nil
+}
+
+func StringClaim(claims map[string]any, key string) string {
+	if len(claims) == 0 || key == "" {
+		return ""
+	}
+	if value, ok := claims[key].(string); ok {
+		return strings.TrimSpace(value)
 	}
 	return ""
 }
 
-// StringListClaim extracts a string list claim from claims map
 func StringListClaim(claims map[string]any, key string) []string {
-	if claims == nil {
+	if len(claims) == 0 || key == "" {
 		return nil
 	}
 	if v, ok := claims[key]; ok {
 		switch val := v.(type) {
 		case []string:
-			return val
+			return CleanStringList(val)
 		case []any:
 			var result []string
 			for _, item := range val {
@@ -79,57 +101,59 @@ func StringListClaim(claims map[string]any, key string) []string {
 					result = append(result, s)
 				}
 			}
-			return result
+			return CleanStringList(result)
+		case string:
+			if strings.Contains(val, " ") {
+				return CleanStringList(strings.Fields(val))
+			}
+			return CleanStringList([]string{val})
 		}
 	}
 	return nil
 }
 
-// AudienceClaim extracts the audience as client ID
 func AudienceClaim(claims map[string]any) string {
-	if claims == nil {
+	if len(claims) == 0 {
 		return ""
 	}
-	if v, ok := claims["aud"]; ok {
-		if s, ok := v.(string); ok {
-			return s
+	switch value := claims["aud"].(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case []string:
+		if len(value) > 0 {
+			return strings.TrimSpace(value[0])
+		}
+	case []any:
+		for _, item := range value {
+			if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+				return strings.TrimSpace(text)
+			}
 		}
 	}
 	return ""
 }
 
-// firstString returns the first non-empty string from a list
 func firstString(values ...string) string {
 	for _, v := range values {
-		if v != "" {
-			return v
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
 		}
 	}
 	return ""
 }
 
-// firstStringList returns the first non-empty string list from a list of lists
-func firstStringList(lists ...[]string) []string {
-	for _, list := range lists {
-		if len(list) > 0 {
-			return list
-		}
-	}
-	return nil
-}
-
-// ContainsString checks if a list contains a string
 func ContainsString(list []string, s string) bool {
+	s = strings.TrimSpace(s)
 	for _, item := range list {
-		if item == s {
+		if strings.TrimSpace(item) == s {
 			return true
 		}
 	}
 	return false
 }
 
-// GroupRequirementSatisfied checks if group requirements are met
 func GroupRequirementSatisfied(required []string, actual []string, mode string) bool {
+	required = CleanStringList(required)
 	if len(required) == 0 {
 		return true
 	}
@@ -150,7 +174,6 @@ func GroupRequirementSatisfied(required []string, actual []string, mode string) 
 	return false
 }
 
-// HasAny checks if any item in needles exists in haystack
 func HasAny(haystack []string, needles []string) bool {
 	for _, needle := range needles {
 		if ContainsString(haystack, needle) {
@@ -160,7 +183,6 @@ func HasAny(haystack []string, needles []string) bool {
 	return false
 }
 
-// CleanStringList removes empty strings and trims whitespace
 func CleanStringList(list []string) []string {
 	var result []string
 	for _, item := range list {
@@ -171,7 +193,6 @@ func CleanStringList(list []string) []string {
 	return result
 }
 
-// CloneStringMap creates a copy of a string map
 func CloneStringMap(m map[string]string) map[string]string {
 	if m == nil {
 		return nil
@@ -183,7 +204,6 @@ func CloneStringMap(m map[string]string) map[string]string {
 	return result
 }
 
-// CloneContext creates a copy of a context map
 func CloneContext(m map[string]any) map[string]any {
 	if m == nil {
 		return make(map[string]any)

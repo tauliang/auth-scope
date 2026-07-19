@@ -1840,6 +1840,129 @@ func (s *PostgresStore) ListOktaAppBindings() ([]mission.OktaAppBinding, error) 
 	return bindings, nil
 }
 
+// SaveEntraAppRegistration saves an Entra application registration mission binding.
+func (s *PostgresStore) SaveEntraAppRegistration(registration mission.EntraAppRegistration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	registrationJSON, err := json.Marshal(registration)
+	if err != nil {
+		return fmt.Errorf("marshal entra app registration: %w", err)
+	}
+	createdAt := registration.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SaveEntraAppRegistration", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO entra_app_registrations (
+			id, tenant_id, issuer, client_id, mission_ref, status, registration_json, created_at, last_resolved_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, registration.RegistrationID, nullableString(registration.TenantID), registration.Issuer, registration.ClientID, registration.MissionRef, registration.Status, registrationJSON, createdAt, nullableTime(registration.LastResolvedAt))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert entra app registration: %w", err)
+	}
+	return nil
+}
+
+// GetEntraAppRegistration retrieves an Entra application registration mission binding.
+func (s *PostgresStore) GetEntraAppRegistration(id string) (mission.EntraAppRegistration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetEntraAppRegistration", startTime)
+
+	var registrationJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT registration_json FROM entra_app_registrations WHERE id = $1`, id).Scan(&registrationJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.EntraAppRegistration{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.EntraAppRegistration{}, fmt.Errorf("query entra app registration: %w", err)
+	}
+	var registration mission.EntraAppRegistration
+	if err := json.Unmarshal(registrationJSON, &registration); err != nil {
+		return mission.EntraAppRegistration{}, fmt.Errorf("unmarshal entra app registration: %w", err)
+	}
+	return registration, nil
+}
+
+// UpdateEntraAppRegistration updates an Entra application registration mission binding.
+func (s *PostgresStore) UpdateEntraAppRegistration(registration mission.EntraAppRegistration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	registrationJSON, err := json.Marshal(registration)
+	if err != nil {
+		return fmt.Errorf("marshal entra app registration: %w", err)
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("UpdateEntraAppRegistration", startTime)
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE entra_app_registrations SET
+			tenant_id = $1,
+			issuer = $2,
+			client_id = $3,
+			mission_ref = $4,
+			status = $5,
+			registration_json = $6,
+			last_resolved_at = $7
+		WHERE id = $8
+	`, nullableString(registration.TenantID), registration.Issuer, registration.ClientID, registration.MissionRef, registration.Status, registrationJSON, nullableTime(registration.LastResolvedAt), registration.RegistrationID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("update entra app registration: %w", err)
+	}
+	return rowsAffectedErr(result)
+}
+
+// ListEntraAppRegistrations lists Entra application registration mission bindings.
+func (s *PostgresStore) ListEntraAppRegistrations() ([]mission.EntraAppRegistration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListEntraAppRegistrations", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT registration_json
+		FROM entra_app_registrations
+		ORDER BY issuer ASC, client_id ASC, created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query entra app registrations: %w", err)
+	}
+	defer rows.Close()
+
+	registrations := make([]mission.EntraAppRegistration, 0)
+	for rows.Next() {
+		var registrationJSON []byte
+		if err := rows.Scan(&registrationJSON); err != nil {
+			return nil, fmt.Errorf("scan entra app registration: %w", err)
+		}
+		var registration mission.EntraAppRegistration
+		if err := json.Unmarshal(registrationJSON, &registration); err != nil {
+			return nil, fmt.Errorf("unmarshal entra app registration: %w", err)
+		}
+		registrations = append(registrations, registration)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate entra app registrations: %w", err)
+	}
+	return registrations, nil
+}
+
 // AppendEvent appends an event and stages it in the outbox in one transaction.
 func (s *PostgresStore) AppendEvent(event mission.Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

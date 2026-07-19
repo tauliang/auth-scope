@@ -97,27 +97,27 @@ func (s *Service) CreateAppRegistration(req CreateAppRegistrationRequest, actor 
 
 	now := s.now()
 	registration := AppRegistration{
-		RegistrationID:    s.id("enr"),
-		TenantID:          strings.TrimSpace(req.TenantID),
-		TenantName:        strings.TrimSpace(req.TenantName),
-		Issuer:            issuer,
-		DiscoveryURL:      DiscoveryURL(issuer),
-		JWKSURI:           JWKSURI(issuer),
-		ClientID:          clientID,
-		AppID:             strings.TrimSpace(req.AppID),
-		AppName:           strings.TrimSpace(req.AppName),
-		MissionRef:        missionRef,
-		RequiredGroups:    CleanStringList(req.RequiredGroups),
-		AdminGroups:       CleanStringList(req.AdminGroups),
-		AllowedSubjects:   CleanStringList(req.AllowedSubjects),
-		GroupClaim:        groupClaim,
-		SubjectClaim:      subjectClaim,
-		RolesClaim:        rolesClaim,
-		GroupMatchMode:    groupMatchMode,
-		Status:            AppRegistrationStatusActive,
-		Metadata:          CloneStringMap(req.Metadata),
-		CreatedBy:         actor,
-		CreatedAt:         now,
+		RegistrationID:  s.id("enr"),
+		TenantID:        strings.TrimSpace(req.TenantID),
+		TenantName:      strings.TrimSpace(req.TenantName),
+		Issuer:          issuer,
+		DiscoveryURL:    DiscoveryURL(issuer),
+		JWKSURI:         JWKSURI(issuer),
+		ClientID:        clientID,
+		AppID:           strings.TrimSpace(req.AppID),
+		AppName:         strings.TrimSpace(req.AppName),
+		MissionRef:      missionRef,
+		RequiredGroups:  CleanStringList(req.RequiredGroups),
+		AdminGroups:     CleanStringList(req.AdminGroups),
+		AllowedSubjects: CleanStringList(req.AllowedSubjects),
+		GroupClaim:      groupClaim,
+		SubjectClaim:    subjectClaim,
+		RolesClaim:      rolesClaim,
+		GroupMatchMode:  groupMatchMode,
+		Status:          AppRegistrationStatusActive,
+		Metadata:        CloneStringMap(req.Metadata),
+		CreatedBy:       actor,
+		CreatedAt:       now,
 	}
 	if err := s.store.SaveAppRegistration(registration); err != nil {
 		return AppRegistration{}, err
@@ -150,7 +150,7 @@ func (s *Service) ResolveAuthorityContext(req ResolveAuthorityContextRequest) (A
 	if err != nil {
 		return AuthorityContextResponse{}, err
 	}
-	clientIDHint := firstString(req.ClientID, StringClaim(req.Claims, "appid"), StringClaim(req.Claims, "client_id"), AudienceClaim(req.Claims))
+	clientIDHint := firstString(req.ClientID, StringClaim(req.Claims, "appid"), StringClaim(req.Claims, "azp"), StringClaim(req.Claims, "client_id"), AudienceClaim(req.Claims))
 	if clientIDHint == "" {
 		return AuthorityContextResponse{}, fmt.Errorf("client_id is required")
 	}
@@ -201,21 +201,21 @@ func (s *Service) ResolveAuthorityContext(req ResolveAuthorityContextRequest) (A
 	context["entra.group_match_mode"] = registration.GroupMatchMode
 
 	resp := AuthorityContextResponse{
-		Accepted:    true,
-		Status:      ResolutionStatusAccepted,
+		Accepted:       true,
+		Status:         ResolutionStatusAccepted,
 		RegistrationID: registration.RegistrationID,
-		TenantID:    registration.TenantID,
-		MissionRef:  registration.MissionRef,
-		Issuer:      issuer,
-		ClientID:    clientID,
-		Subject:     subject,
-		Groups:      groups,
-		Roles:       roles,
-		Admin:       admin,
-		ReasonCodes: []string{"entra_registration_satisfied"},
-		HumanReason: "Entra claims satisfy the active registration requirements.",
-		Context:     context,
-		ResolvedAt:  now.Format(time.RFC3339),
+		TenantID:       registration.TenantID,
+		MissionRef:     registration.MissionRef,
+		Issuer:         issuer,
+		ClientID:       clientID,
+		Subject:        subject,
+		Groups:         groups,
+		Roles:          roles,
+		Admin:          admin,
+		ReasonCodes:    []string{"entra_registration_satisfied"},
+		HumanReason:    "Entra claims satisfy the active registration requirements.",
+		Context:        context,
+		ResolvedAt:     now.Format(time.RFC3339),
 	}
 	if req.Evaluation != nil {
 		if s.evaluator == nil {
@@ -259,19 +259,19 @@ func (s *Service) registrationFor(issuer string, clientID string, missionRef str
 
 func (s *Service) deniedResponse(registration AppRegistration, issuer string, clientID string, subject string, groups []string, roles []string, reasons []string, humanReason string) AuthorityContextResponse {
 	return AuthorityContextResponse{
-		Accepted:    false,
-		Status:      ResolutionStatusDenied,
+		Accepted:       false,
+		Status:         ResolutionStatusDenied,
 		RegistrationID: registration.RegistrationID,
-		TenantID:    registration.TenantID,
-		MissionRef:  registration.MissionRef,
-		Issuer:      issuer,
-		ClientID:    clientID,
-		Subject:     subject,
-		Groups:      groups,
-		Roles:       roles,
-		ReasonCodes: reasons,
-		HumanReason: humanReason,
-		ResolvedAt:  s.now().Format(time.RFC3339),
+		TenantID:       registration.TenantID,
+		MissionRef:     registration.MissionRef,
+		Issuer:         issuer,
+		ClientID:       clientID,
+		Subject:        subject,
+		Groups:         groups,
+		Roles:          roles,
+		ReasonCodes:    reasons,
+		HumanReason:    humanReason,
+		ResolvedAt:     s.now().Format(time.RFC3339),
 	}
 }
 

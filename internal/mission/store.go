@@ -40,6 +40,7 @@ type Store interface {
 	ContainmentStore
 	GitHubStore
 	OktaStore
+	EntraStore
 	ExpansionDecisionStore
 	ProposalApprovalStore
 	EventStore
@@ -48,44 +49,46 @@ type Store interface {
 }
 
 type MemoryStore struct {
-	mu               sync.RWMutex
-	agents           map[string]AgentIdentity
-	nonces           map[string]AgentNonce
-	proposals        map[string]MissionProposal
-	missions         map[string]Mission
-	expansions       map[string]ExpansionRequest
-	evidence         map[string]EvaluationEvidence
-	toolContracts    map[string]ToolContract
-	projections      map[string]Projection
-	leases           map[string]MissionLease
-	approvalRules    map[string]ApprovalRule
-	approvals        map[string][]ApprovalRecord
-	negotiations     map[string]AuthorityNegotiation
-	containments     map[string]ContainmentRule
-	githubBindings   map[string]GitHubRepositoryBinding
-	githubDeliveries map[string]GitHubWebhookDelivery
-	oktaBindings     map[string]OktaAppBinding
-	events           []Event
+	mu                 sync.RWMutex
+	agents             map[string]AgentIdentity
+	nonces             map[string]AgentNonce
+	proposals          map[string]MissionProposal
+	missions           map[string]Mission
+	expansions         map[string]ExpansionRequest
+	evidence           map[string]EvaluationEvidence
+	toolContracts      map[string]ToolContract
+	projections        map[string]Projection
+	leases             map[string]MissionLease
+	approvalRules      map[string]ApprovalRule
+	approvals          map[string][]ApprovalRecord
+	negotiations       map[string]AuthorityNegotiation
+	containments       map[string]ContainmentRule
+	githubBindings     map[string]GitHubRepositoryBinding
+	githubDeliveries   map[string]GitHubWebhookDelivery
+	oktaBindings       map[string]OktaAppBinding
+	entraRegistrations map[string]EntraAppRegistration
+	events             []Event
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		agents:           make(map[string]AgentIdentity),
-		nonces:           make(map[string]AgentNonce),
-		proposals:        make(map[string]MissionProposal),
-		missions:         make(map[string]Mission),
-		expansions:       make(map[string]ExpansionRequest),
-		evidence:         make(map[string]EvaluationEvidence),
-		toolContracts:    make(map[string]ToolContract),
-		projections:      make(map[string]Projection),
-		leases:           make(map[string]MissionLease),
-		approvalRules:    make(map[string]ApprovalRule),
-		approvals:        make(map[string][]ApprovalRecord),
-		negotiations:     make(map[string]AuthorityNegotiation),
-		containments:     make(map[string]ContainmentRule),
-		githubBindings:   make(map[string]GitHubRepositoryBinding),
-		githubDeliveries: make(map[string]GitHubWebhookDelivery),
-		oktaBindings:     make(map[string]OktaAppBinding),
+		agents:             make(map[string]AgentIdentity),
+		nonces:             make(map[string]AgentNonce),
+		proposals:          make(map[string]MissionProposal),
+		missions:           make(map[string]Mission),
+		expansions:         make(map[string]ExpansionRequest),
+		evidence:           make(map[string]EvaluationEvidence),
+		toolContracts:      make(map[string]ToolContract),
+		projections:        make(map[string]Projection),
+		leases:             make(map[string]MissionLease),
+		approvalRules:      make(map[string]ApprovalRule),
+		approvals:          make(map[string][]ApprovalRecord),
+		negotiations:       make(map[string]AuthorityNegotiation),
+		containments:       make(map[string]ContainmentRule),
+		githubBindings:     make(map[string]GitHubRepositoryBinding),
+		githubDeliveries:   make(map[string]GitHubWebhookDelivery),
+		oktaBindings:       make(map[string]OktaAppBinding),
+		entraRegistrations: make(map[string]EntraAppRegistration),
 	}
 }
 
@@ -799,6 +802,75 @@ func (s *MemoryStore) ListOktaAppBindings() ([]OktaAppBinding, error) {
 		return 0
 	})
 	return bindings, nil
+}
+
+func (s *MemoryStore) SaveEntraAppRegistration(registration EntraAppRegistration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.entraRegistrations[registration.RegistrationID]; ok {
+		return ErrConflict
+	}
+	for _, existing := range s.entraRegistrations {
+		if existing.Status == EntraAppRegistrationStatusActive &&
+			existing.Issuer == registration.Issuer &&
+			existing.ClientID == registration.ClientID &&
+			existing.MissionRef == registration.MissionRef {
+			return ErrConflict
+		}
+	}
+	s.entraRegistrations[registration.RegistrationID] = registration
+	return nil
+}
+
+func (s *MemoryStore) GetEntraAppRegistration(id string) (EntraAppRegistration, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	registration, ok := s.entraRegistrations[id]
+	if !ok {
+		return EntraAppRegistration{}, ErrNotFound
+	}
+	return registration, nil
+}
+
+func (s *MemoryStore) UpdateEntraAppRegistration(registration EntraAppRegistration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.entraRegistrations[registration.RegistrationID]; !ok {
+		return ErrNotFound
+	}
+	s.entraRegistrations[registration.RegistrationID] = registration
+	return nil
+}
+
+func (s *MemoryStore) ListEntraAppRegistrations() ([]EntraAppRegistration, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	registrations := make([]EntraAppRegistration, 0, len(s.entraRegistrations))
+	for _, registration := range s.entraRegistrations {
+		registrations = append(registrations, registration)
+	}
+	slices.SortFunc(registrations, func(a, b EntraAppRegistration) int {
+		if a.Issuer < b.Issuer {
+			return -1
+		}
+		if a.Issuer > b.Issuer {
+			return 1
+		}
+		if a.ClientID < b.ClientID {
+			return -1
+		}
+		if a.ClientID > b.ClientID {
+			return 1
+		}
+		if a.RegistrationID < b.RegistrationID {
+			return -1
+		}
+		if a.RegistrationID > b.RegistrationID {
+			return 1
+		}
+		return 0
+	})
+	return registrations, nil
 }
 
 func (s *MemoryStore) AppendEvent(event Event) error {

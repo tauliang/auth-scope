@@ -29,7 +29,7 @@ func TestEntraAppRegistrationResolvesAuthorityContextAndEvaluatesAction(t *testi
 	if registration.DiscoveryURL != "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0/.well-known/openid-configuration" {
 		t.Fatalf("unexpected discovery URL: %s", registration.DiscoveryURL)
 	}
-	if registration.JWKSURI != "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0/discovery/v2.0/keys" {
+	if registration.JWKSURI != "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/discovery/v2.0/keys" {
 		t.Fatalf("unexpected jwks URI: %s", registration.JWKSURI)
 	}
 	if _, err := service.CreateEntraAppRegistration(CreateEntraAppRegistrationRequest{
@@ -51,7 +51,7 @@ func TestEntraAppRegistrationResolvesAuthorityContextAndEvaluatesAction(t *testi
 		Context: map[string]any{"risk": "low", "reversible": true},
 		Evaluation: &EntraEvaluationRequest{
 			MissionVersionSeen: mission.MissionVersion,
-			Actor:              EntraActor{AgentInstanceID: "inst_456", ClientID: "research-agent"},
+			Actor:              EntraActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
 			Action: EntraEvaluationAction{
 				Type:      "tool_call",
 				Resource:  EntraEvaluationActionResource{Type: "drive_folder", ID: "board"},

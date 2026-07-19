@@ -261,6 +261,84 @@ func TestE2EGrandGovernanceFlow(t *testing.T) {
 	}
 }
 
+func TestE2EEntraIntegrationFlow(t *testing.T) {
+	service := testService()
+	router := NewHandler(service).Routes()
+
+	proposalReq := validProposalRequest()
+	proposalReq.Intent = Purpose{Objective: "Govern Entra-authenticated agent work"}
+	proposalReq.Conditions = nil
+	proposal := postJSON[CreateProposalResponse](t, router, "/v1/mission-proposals", proposalReq)
+	mission := postJSON[ApproveProposalResponse](t, router, "/v1/mission-proposals/"+proposal.ProposalID+"/approve", ApproveProposalRequest{
+		Approver:         Principal{Subject: "alice@example.com", Issuer: "https://idp.example.com"},
+		ApprovalEvidence: ApprovalEvidence{Method: "e2e-test"},
+	})
+
+	registration := postJSON[EntraAppRegistration](t, router, "/v1/integrations/entra/app-registrations", CreateEntraAppRegistrationRequest{
+		Issuer:          "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0/",
+		ClientID:        "00000000-0000-0000-0000-000000000000",
+		AppID:           "app_entra_001",
+		AppName:         "Auth Scope Console",
+		MissionRef:      mission.MissionRef,
+		RequiredGroups:  []string{"Mission Operators"},
+		AdminGroups:     []string{"Mission Admins"},
+		AllowedSubjects: []string{"user@example.onmicrosoft.com"},
+		GroupMatchMode:  EntraGroupMatchAny,
+	})
+	if registration.Issuer != "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0" ||
+		registration.JWKSURI != "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/discovery/v2.0/keys" {
+		t.Fatalf("entra registration = %#v, want normalized issuer and jwks uri", registration)
+	}
+
+	listed := getJSON[struct {
+		AppRegistrations []EntraAppRegistration `json:"app_registrations"`
+	}](t, router, "/v1/integrations/entra/app-registrations")
+	if len(listed.AppRegistrations) != 1 || listed.AppRegistrations[0].RegistrationID != registration.RegistrationID {
+		t.Fatalf("listed entra registrations = %#v, want registration %s", listed.AppRegistrations, registration.RegistrationID)
+	}
+
+	resolved := postJSON[EntraAuthorityContextResponse](t, router, "/v1/integrations/entra/authority-context/resolve", ResolveEntraAuthorityContextRequest{
+		Claims: map[string]any{
+			"iss":    "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0",
+			"azp":    "00000000-0000-0000-0000-000000000000",
+			"sub":    "user@example.onmicrosoft.com",
+			"groups": []any{"Mission Operators", "Mission Admins"},
+			"roles":  []any{"Reader"},
+		},
+		Context: map[string]any{"finance.close.status": "open", "risk": "low", "reversible": true},
+		Evaluation: &EntraEvaluationRequest{
+			MissionVersionSeen: mission.MissionVersion,
+			Actor:              EntraActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+			Action: EntraEvaluationAction{
+				Type:      "tool_call",
+				Resource:  EntraEvaluationActionResource{Type: "drive_folder", ID: "board"},
+				Operation: "read",
+			},
+		},
+	})
+	if !resolved.Accepted || !resolved.Admin || resolved.RegistrationID != registration.RegistrationID {
+		t.Fatalf("entra resolved context = %#v, want accepted admin context", resolved)
+	}
+	if resolved.Evaluation == nil || resolved.Evaluation.Decision != string(DecisionAllow) || resolved.Evaluation.DecisionArtifact == "" {
+		t.Fatalf("entra evaluation = %#v, want allow with decision artifact", resolved.Evaluation)
+	}
+	if resolved.Context["entra.registration_id"] != registration.RegistrationID || resolved.Context["finance.close.status"] != "open" {
+		t.Fatalf("entra context = %#v, want registration and caller context", resolved.Context)
+	}
+
+	denied := postJSON[EntraAuthorityContextResponse](t, router, "/v1/integrations/entra/authority-context/resolve", ResolveEntraAuthorityContextRequest{
+		Claims: map[string]any{
+			"iss":    "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0",
+			"aud":    "00000000-0000-0000-0000-000000000000",
+			"sub":    "user@example.onmicrosoft.com",
+			"groups": []any{"Everyone"},
+		},
+	})
+	if denied.Accepted || denied.Status != EntraResolutionStatusDenied || !contains(denied.ReasonCodes, "entra_required_group_missing") {
+		t.Fatalf("entra denied context = %#v, want required-group denial", denied)
+	}
+}
+
 func postJSON[T any](t *testing.T, router http.Handler, path string, value any) T {
 	return postJSONAsAdmin[T](t, router, path, value, defaultDevelopmentAdminToken)
 }

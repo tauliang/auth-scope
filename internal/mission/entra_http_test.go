@@ -47,7 +47,7 @@ func TestAPIEntraIntegrationLifecycle(t *testing.T) {
 		},
 		Evaluation: &EntraEvaluationRequest{
 			MissionVersionSeen: mission.MissionVersion,
-			Actor:              EntraActor{AgentInstanceID: "inst_456", ClientID: "research-agent"},
+			Actor:              EntraActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
 			Action: EntraEvaluationAction{
 				Type:      "tool_call",
 				Resource:  EntraEvaluationActionResource{Type: "drive_folder", ID: "board"},

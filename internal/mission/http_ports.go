@@ -89,6 +89,12 @@ type OktaAPI interface {
 	ResolveOktaAuthorityContext(ResolveOktaAuthorityContextRequest) (OktaAuthorityContextResponse, error)
 }
 
+type EntraAPI interface {
+	CreateEntraAppRegistration(CreateEntraAppRegistrationRequest, Principal) (EntraAppRegistration, error)
+	ListEntraAppRegistrations() ([]EntraAppRegistration, error)
+	ResolveEntraAuthorityContext(ResolveEntraAuthorityContextRequest) (EntraAuthorityContextResponse, error)
+}
+
 type HandlerServices struct {
 	Identity        IdentityAPI
 	Mission         MissionAPI
@@ -99,4 +105,5 @@ type HandlerServices struct {
 	Operator        OperatorAPI
 	GitHub          GitHubAPI
 	Okta            OktaAPI
+	Entra           EntraAPI
 }

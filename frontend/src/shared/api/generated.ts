@@ -4,6 +4,86 @@
  */
 
 export interface paths {
+    "/healthz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/mission-authority": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getMissionAuthorityDiscovery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/authzen-configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAuthZENDiscovery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/v1/evaluation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["evaluateAuthZEN"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/v1/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["evaluateAuthZENBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/session": {
         parameters: {
             query?: never;
@@ -52,6 +132,182 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/missions/{mission_ref}/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["evaluateMission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/authority/negotiations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createAuthorityNegotiation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/expansion-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createExpansionRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resumeMission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/delegate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["delegateMission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revokeMission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeMission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/introspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["introspectMission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getMissionLineage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/projections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createProjection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/missions/{mission_ref}/leases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createMissionLease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/mission-proposals": {
         parameters: {
             query?: never;
@@ -61,7 +317,7 @@ export interface paths {
         };
         get: operations["listMissionProposals"];
         put?: never;
-        post?: never;
+        post: operations["createMissionProposal"];
         delete?: never;
         options?: never;
         head?: never;
@@ -84,6 +340,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mission-proposals/{proposal_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["approveMissionProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/expansion-requests": {
         parameters: {
             query?: never;
@@ -100,6 +372,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/expansion-requests/{expansion_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getExpansionRequest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/expansion-requests/{expansion_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["approveExpansionRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/expansion-requests/{expansion_id}/deny": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["denyExpansionRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/expansion-requests/{expansion_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["submitExpansionApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agents": {
         parameters: {
             query?: never;
@@ -108,6 +444,54 @@ export interface paths {
             cookie?: never;
         };
         get: operations["listAgents"];
+        put?: never;
+        post: operations["registerAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAgent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{agent_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revokeAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{agent_id}/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAgentLineage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -125,7 +509,39 @@ export interface paths {
         };
         get: operations["listToolContracts"];
         put?: never;
+        post: operations["registerToolContract"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tool-contracts/{tool_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getToolContract"];
+        put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tool-calls/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["authorizeToolCall"];
         delete?: never;
         options?: never;
         head?: never;
@@ -148,6 +564,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projections/{projection_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getProjectionStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projections/{projection_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revokeProjection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projections/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["verifyProjection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -158,6 +622,54 @@ export interface paths {
         get: operations["listEvents"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["streamEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/approval-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listApprovalRules"];
+        put?: never;
+        post: operations["createApprovalRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/containment-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listContainmentRules"];
+        put?: never;
+        post: operations["createContainmentRule"];
         delete?: never;
         options?: never;
         head?: never;
@@ -180,10 +692,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/containment-rules/{rule_id}/lift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["liftContainmentRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/containment-rules/{rule_id}/blast-radius": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getContainmentBlastRadius"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/authority/negotiations/{negotiation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAuthorityNegotiation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/decision-artifacts/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["verifyDecisionArtifact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/leases/{lease_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["refreshMissionLease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        GenericObject: {
+            [key: string]: unknown;
+        };
         ApiError: {
             error?: string;
             code: string;
@@ -329,6 +924,11 @@ export interface components {
         };
     };
     parameters: {
+        AgentID: string;
+        ExpansionID: string;
+        LeaseID: string;
+        MissionRef: string;
+        ProjectionID: string;
         Tenant: string;
         Query: string;
         Status: string;
@@ -337,12 +937,125 @@ export interface components {
         Cursor: string;
         Limit: number;
     };
-    requestBodies: never;
+    requestBodies: {
+        GenericJSON: {
+            content: {
+                "application/json": components["schemas"]["GenericObject"];
+            };
+        };
+    };
     headers: never;
     pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service health. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getMissionAuthorityDiscovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mission authority discovery document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getAuthZENDiscovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description AuthZEN discovery document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    evaluateAuthZEN: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description AuthZEN single evaluation decision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    evaluateAuthZENBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description AuthZEN batch evaluation decisions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     getAdminSession: {
         parameters: {
             query?: never;
@@ -416,6 +1129,259 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    evaluateMission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Mission-scoped authorization decision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createAuthorityNegotiation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Authority negotiation. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createExpansionRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Expansion request. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpansionRequest"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    resumeMission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Mission resume decision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    delegateMission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Delegated child mission. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeMission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Revoked mission. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mission"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    completeMission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Completed mission. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mission"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    introspectMission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mission detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mission"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getMissionLineage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mission lineage graph. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createProjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Signed external projection. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createMissionLease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mission_ref: components["parameters"]["MissionRef"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Mission lease decision. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     listMissionProposals: {
         parameters: {
             query?: {
@@ -445,6 +1411,27 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    createMissionProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Created mission proposal. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     getMissionProposal: {
         parameters: {
             query?: never;
@@ -463,6 +1450,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MissionProposal"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    approveMissionProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Activated mission. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
                 };
             };
             default: components["responses"]["Error"];
@@ -497,6 +1507,98 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getExpansionRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expansion_id: components["parameters"]["ExpansionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Expansion request. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpansionRequest"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    approveExpansionRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expansion_id: components["parameters"]["ExpansionID"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Expansion approval decision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    denyExpansionRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expansion_id: components["parameters"]["ExpansionID"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Expansion denial decision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    submitExpansionApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                expansion_id: components["parameters"]["ExpansionID"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Recorded expansion approval. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     listAgents: {
         parameters: {
             query?: {
@@ -521,6 +1623,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    registerAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Registered agent identity. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: components["parameters"]["AgentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentIdentity"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: components["parameters"]["AgentID"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Revoked agent identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentIdentity"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getAgentLineage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: components["parameters"]["AgentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent lineage graph. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
                 };
             };
             default: components["responses"]["Error"];
@@ -555,6 +1747,71 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    registerToolContract: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Registered tool contract. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolContract"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getToolContract: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tool contract. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolContract"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    authorizeToolCall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Tool-call authorization decision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     listProjections: {
         parameters: {
             query?: {
@@ -579,6 +1836,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectionPage"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getProjectionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projection_id: components["parameters"]["ProjectionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Projection status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeProjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projection_id: components["parameters"]["ProjectionID"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Revoked projection status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    verifyProjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Projection verification result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
                 };
             };
             default: components["responses"]["Error"];
@@ -613,6 +1937,111 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    streamEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent audit event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listApprovalRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Approval rules. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createApprovalRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Approval rule. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listContainmentRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Containment rules. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createContainmentRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Containment rule. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContainmentRule"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     getContainmentRule: {
         parameters: {
             query?: never;
@@ -631,6 +2060,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContainmentRule"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    liftContainmentRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Lifted containment rule. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContainmentRule"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getContainmentBlastRadius: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Containment blast radius. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getAuthorityNegotiation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                negotiation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authority negotiation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    verifyDecisionArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Decision artifact verification result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    refreshMissionLease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lease_id: components["parameters"]["LeaseID"];
+            };
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Refreshed mission lease decision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenericObject"];
                 };
             };
             default: components["responses"]["Error"];

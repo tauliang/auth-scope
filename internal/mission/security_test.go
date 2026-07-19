@@ -206,6 +206,23 @@ func TestSignedAuthZENEvaluationAPI(t *testing.T) {
 	}
 }
 
+func TestStrictRuntimeHandlerRequiresSignedAgentRequest(t *testing.T) {
+	service := testService()
+	mission := approveTestMission(t, service)
+	router := NewHandlerWithOptions(service, AdminAuthenticatorFromEnv(), HandlerOptions{RequireAgentSignatures: true}).Routes()
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, jsonRequest(http.MethodPost, "/v1/missions/"+mission.MissionRef+"/evaluate", EvaluateRequest{
+		MissionVersionSeen: mission.MissionVersion,
+		Actor:              Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Action:             Action{Type: "tool_call", Resource: ActionResource{Type: "drive_folder", ID: "board"}, Operation: "read"},
+		Context:            map[string]any{"finance.close.status": "open"},
+	}))
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("unsigned runtime request status = %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestAgentRegistryAPIAndSignedMissionEvaluationAPI(t *testing.T) {
 	service := testService()
 	router := NewHandler(service).Routes()
@@ -224,7 +241,9 @@ func TestAgentRegistryAPIAndSignedMissionEvaluationAPI(t *testing.T) {
 	decodeTestJSON(t, createAgent.Body.Bytes(), &registered)
 
 	getAgent := httptest.NewRecorder()
-	router.ServeHTTP(getAgent, httptest.NewRequest(http.MethodGet, "/v1/agents/"+registered.AgentID, nil))
+	getAgentReq := httptest.NewRequest(http.MethodGet, "/v1/agents/"+registered.AgentID, nil)
+	getAgentReq.Header.Set("Authorization", "Bearer "+defaultDevelopmentAdminToken)
+	router.ServeHTTP(getAgent, getAgentReq)
 	if getAgent.Code != http.StatusOK {
 		t.Fatalf("get agent status = %d body=%s", getAgent.Code, getAgent.Body.String())
 	}

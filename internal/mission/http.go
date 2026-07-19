@@ -10,17 +10,28 @@ import (
 	"strings"
 )
 
+const maxJSONRequestBodyBytes int64 = 1 << 20
+
 type Handler struct {
-	services           HandlerServices
-	adminAuthenticator AdminAuthenticator
+	services               HandlerServices
+	adminAuthenticator     AdminAuthenticator
+	requireAgentSignatures bool
 }
 
 func NewHandler(service *Service) *Handler {
-	return NewHandlerWithAdminAuthenticator(service, AdminAuthenticatorFromEnv())
+	return NewHandlerWithOptions(service, AdminAuthenticatorFromEnv(), HandlerOptions{})
 
 }
 
 func NewHandlerWithAdminAuthenticator(service *Service, authenticator AdminAuthenticator) *Handler {
+	return NewHandlerWithOptions(service, authenticator, HandlerOptions{})
+}
+
+type HandlerOptions struct {
+	RequireAgentSignatures bool
+}
+
+func NewHandlerWithOptions(service *Service, authenticator AdminAuthenticator, options HandlerOptions) *Handler {
 	return NewHandlerWithServices(HandlerServices{
 		Identity:        service,
 		Mission:         service,
@@ -29,11 +40,15 @@ func NewHandlerWithAdminAuthenticator(service *Service, authenticator AdminAuthe
 		GrandGovernance: service,
 		AuthZEN:         service,
 		Operator:        service,
-	}, authenticator)
+	}, authenticator, options)
 }
 
-func NewHandlerWithServices(services HandlerServices, authenticator AdminAuthenticator) *Handler {
-	return &Handler{services: services, adminAuthenticator: authenticator}
+func NewHandlerWithServices(services HandlerServices, authenticator AdminAuthenticator, options ...HandlerOptions) *Handler {
+	var selected HandlerOptions
+	if len(options) > 0 {
+		selected = options[0]
+	}
+	return &Handler{services: services, adminAuthenticator: authenticator, requireAgentSignatures: selected.RequireAgentSignatures}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -43,13 +58,13 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /.well-known/authzen-configuration", h.authZENDiscovery)
 	mux.HandleFunc("POST /access/v1/evaluation", h.authZENEvaluation)
 	mux.HandleFunc("POST /access/v1/evaluations", h.authZENEvaluations)
-	mux.HandleFunc("POST /v1/agents", h.registerAgent)
+	mux.Handle("POST /v1/agents", h.requireAdmin(http.HandlerFunc(h.registerAgent)))
 	mux.Handle("GET /v1/admin/session", h.requireAdmin(http.HandlerFunc(h.adminSession)))
 	mux.Handle("GET /v1/operations/summary", h.requireAdmin(http.HandlerFunc(h.operationsSummary)))
 	mux.Handle("GET /v1/agents", h.requireAdmin(http.HandlerFunc(h.listAgents)))
-	mux.HandleFunc("GET /v1/agents/{agent_id}", h.getAgent)
+	mux.Handle("GET /v1/agents/{agent_id}", h.requireAdmin(http.HandlerFunc(h.getAgent)))
 	mux.Handle("POST /v1/agents/{agent_id}/revoke", h.requireAdmin(http.HandlerFunc(h.revokeAgent)))
-	mux.HandleFunc("POST /v1/mission-proposals", h.createProposal)
+	mux.Handle("POST /v1/mission-proposals", h.requireAdmin(http.HandlerFunc(h.createProposal)))
 	mux.Handle("GET /v1/mission-proposals", h.requireAdmin(http.HandlerFunc(h.listProposals)))
 	mux.Handle("GET /v1/mission-proposals/{proposal_id}", h.requireAdmin(http.HandlerFunc(h.getProposal)))
 	mux.Handle("POST /v1/mission-proposals/{proposal_id}/approve", h.requireAdmin(http.HandlerFunc(h.approveProposal)))
@@ -111,6 +126,32 @@ func (h *Handler) requireAdmin(next http.Handler) http.Handler {
 	})
 }
 
+func bindAdminTenant(w http.ResponseWriter, r *http.Request, tenantID *string) bool {
+	tenant := authenticatedAdmin(r).TenantSubject
+	if tenant == "" {
+		return true
+	}
+	requested := strings.TrimSpace(*tenantID)
+	if requested != "" && requested != tenant {
+		writeError(w, http.StatusForbidden, fmt.Errorf("tenant %q is outside the administrator scope", requested))
+		return false
+	}
+	*tenantID = tenant
+	return true
+}
+
+func ensureAdminTenantAccess(w http.ResponseWriter, r *http.Request, tenantID string) bool {
+	tenant := authenticatedAdmin(r).TenantSubject
+	if tenant == "" {
+		return true
+	}
+	if strings.TrimSpace(tenantID) != tenant {
+		writeError(w, http.StatusForbidden, fmt.Errorf("tenant %q is outside the administrator scope", tenantID))
+		return false
+	}
+	return true
+}
+
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -168,6 +209,9 @@ func (h *Handler) registerAgent(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	if !bindAdminTenant(w, r, &req.TenantID) {
+		return
+	}
 	resp, err := h.services.Identity.RegisterAgent(req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -182,12 +226,23 @@ func (h *Handler) getAgent(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	if !ensureAdminTenantAccess(w, r, identity.TenantID) {
+		return
+	}
 	writeJSON(w, http.StatusOK, identity)
 }
 
 func (h *Handler) revokeAgent(w http.ResponseWriter, r *http.Request) {
 	var req StateChangeRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	existing, err := h.services.Identity.GetAgentIdentity(r.PathValue("agent_id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, existing.TenantID) {
 		return
 	}
 	req.Actor = principalActor(authenticatedAdmin(r))
@@ -204,6 +259,9 @@ func (h *Handler) createProposal(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	if !bindAdminTenant(w, r, &req.TenantID) {
+		return
+	}
 	resp, err := h.services.Mission.CreateProposal(req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -215,6 +273,14 @@ func (h *Handler) createProposal(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) approveProposal(w http.ResponseWriter, r *http.Request) {
 	var req ApproveProposalRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	proposal, err := h.services.Operator.GetProposal(r.PathValue("proposal_id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, proposal.TenantID) {
 		return
 	}
 	req.Approver = authenticatedAdmin(r)
@@ -313,12 +379,23 @@ func (h *Handler) getExpansionRequest(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	if !ensureAdminTenantAccess(w, r, resp.TenantID) {
+		return
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) approveExpansionRequest(w http.ResponseWriter, r *http.Request) {
 	var req ExpansionDecisionRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	expansion, err := h.services.Governance.GetExpansionRequest(r.PathValue("expansion_id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, expansion.TenantID) {
 		return
 	}
 	req.Approver = authenticatedAdmin(r)
@@ -333,6 +410,14 @@ func (h *Handler) approveExpansionRequest(w http.ResponseWriter, r *http.Request
 func (h *Handler) denyExpansionRequest(w http.ResponseWriter, r *http.Request) {
 	var req ExpansionDecisionRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	expansion, err := h.services.Governance.GetExpansionRequest(r.PathValue("expansion_id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, expansion.TenantID) {
 		return
 	}
 	req.Approver = authenticatedAdmin(r)
@@ -429,12 +514,23 @@ func (h *Handler) getProjectionStatus(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	if !ensureAdminTenantAccess(w, r, resp.TenantID) {
+		return
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) revokeProjection(w http.ResponseWriter, r *http.Request) {
 	var req StateChangeRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	status, err := h.services.Projection.GetProjectionStatus(r.PathValue("projection_id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, status.TenantID) {
 		return
 	}
 	req.Actor = principalActor(authenticatedAdmin(r))
@@ -507,6 +603,9 @@ func (h *Handler) createApprovalRule(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	if !bindAdminTenant(w, r, &req.TenantID) {
+		return
+	}
 	req.CreatedBy = authenticatedAdmin(r)
 	resp, err := h.services.Projection.CreateApprovalRule(req)
 	if err != nil {
@@ -516,11 +615,20 @@ func (h *Handler) createApprovalRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-func (h *Handler) listApprovalRules(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) listApprovalRules(w http.ResponseWriter, r *http.Request) {
 	rules, err := h.services.Projection.ListApprovalRules()
 	if err != nil {
 		writeServiceError(w, err)
 		return
+	}
+	if tenant := authenticatedAdmin(r).TenantSubject; tenant != "" {
+		filtered := make([]ApprovalRule, 0, len(rules))
+		for _, rule := range rules {
+			if rule.TenantID == tenant {
+				filtered = append(filtered, rule)
+			}
+		}
+		rules = filtered
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"approval_rules": rules})
 }
@@ -544,6 +652,9 @@ func (h *Handler) createContainmentRule(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	if !bindAdminTenant(w, r, &req.TenantID) {
+		return
+	}
 	req.CreatedBy = authenticatedAdmin(r)
 	resp, err := h.services.GrandGovernance.CreateContainmentRule(req)
 	if err != nil {
@@ -553,11 +664,20 @@ func (h *Handler) createContainmentRule(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-func (h *Handler) listContainmentRules(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) listContainmentRules(w http.ResponseWriter, r *http.Request) {
 	rules, err := h.services.GrandGovernance.ListContainmentRules()
 	if err != nil {
 		writeServiceError(w, err)
 		return
+	}
+	if tenant := authenticatedAdmin(r).TenantSubject; tenant != "" {
+		filtered := make([]ContainmentRule, 0, len(rules))
+		for _, rule := range rules {
+			if rule.TenantID == tenant {
+				filtered = append(filtered, rule)
+			}
+		}
+		rules = filtered
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"containment_rules": rules})
 }
@@ -565,6 +685,14 @@ func (h *Handler) listContainmentRules(w http.ResponseWriter, _ *http.Request) {
 func (h *Handler) liftContainmentRule(w http.ResponseWriter, r *http.Request) {
 	var req StateChangeRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	rule, err := h.services.Operator.GetContainmentRule(r.PathValue("rule_id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, rule.TenantID) {
 		return
 	}
 	req.Actor = principalActor(authenticatedAdmin(r))
@@ -577,6 +705,14 @@ func (h *Handler) liftContainmentRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) containmentBlastRadius(w http.ResponseWriter, r *http.Request) {
+	rule, err := h.services.Operator.GetContainmentRule(r.PathValue("rule_id"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, rule.TenantID) {
+		return
+	}
 	resp, err := h.services.GrandGovernance.ContainmentBlastRadiusContext(r.Context(), r.PathValue("rule_id"))
 	if err != nil {
 		writeServiceError(w, err)
@@ -638,6 +774,14 @@ func (h *Handler) revoke(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	mission, err := h.services.Mission.Introspect(r.PathValue("mission_ref"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, mission.TenantID) {
+		return
+	}
 	req.Actor = principalActor(authenticatedAdmin(r))
 	resp, err := h.services.Mission.Revoke(r.PathValue("mission_ref"), req)
 	if err != nil {
@@ -650,6 +794,14 @@ func (h *Handler) revoke(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) complete(w http.ResponseWriter, r *http.Request) {
 	var req StateChangeRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	mission, err := h.services.Mission.Introspect(r.PathValue("mission_ref"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, mission.TenantID) {
 		return
 	}
 	req.Actor = principalActor(authenticatedAdmin(r))
@@ -667,10 +819,21 @@ func (h *Handler) introspect(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	if !ensureAdminTenantAccess(w, r, resp.TenantID) {
+		return
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) missionLineage(w http.ResponseWriter, r *http.Request) {
+	mission, err := h.services.Mission.Introspect(r.PathValue("mission_ref"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if !ensureAdminTenantAccess(w, r, mission.TenantID) {
+		return
+	}
 	resp, err := h.services.GrandGovernance.MissionLineageContext(r.Context(), r.PathValue("mission_ref"))
 	if err != nil {
 		writeServiceError(w, err)
@@ -680,6 +843,15 @@ func (h *Handler) missionLineage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) agentLineage(w http.ResponseWriter, r *http.Request) {
+	identity, err := h.services.Identity.GetAgentIdentity(r.PathValue("agent_id"))
+	if err == nil {
+		if !ensureAdminTenantAccess(w, r, identity.TenantID) {
+			return
+		}
+	} else if authenticatedAdmin(r).TenantSubject != "" {
+		writeServiceError(w, err)
+		return
+	}
 	resp, err := h.services.GrandGovernance.AgentLineageContext(r.Context(), r.PathValue("agent_id"))
 	if err != nil {
 		writeServiceError(w, err)
@@ -759,7 +931,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 }
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) ([]byte, bool) {
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONRequestBodyBytes))
 	_ = r.Body.Close()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -784,6 +956,10 @@ func (h *Handler) verifiedAgentIdentity(w http.ResponseWriter, r *http.Request, 
 	nonce := r.Header.Get("x-auth-scope-nonce")
 	signature := r.Header.Get("x-auth-scope-signature")
 	if agentID == "" && nonce == "" && signature == "" {
+		if h.requireAgentSignatures {
+			writeError(w, http.StatusUnauthorized, ErrInvalidSignature)
+			return nil, false
+		}
 		return nil, true
 	}
 	if agentID == "" || nonce == "" || signature == "" {

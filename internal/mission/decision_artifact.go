@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 )
@@ -36,11 +35,11 @@ type DecisionArtifactPayload struct {
 }
 
 func decisionArtifactKeyFromEnv() []byte {
-	secret := os.Getenv("AUTH_SCOPE_DECISION_SECRET")
-	if secret == "" {
-		secret = defaultDecisionArtifactSecret
+	key, err := ArtifactKeyFromEnv(false)
+	if err != nil {
+		return []byte(defaultDecisionArtifactSecret)
 	}
-	return []byte(secret)
+	return key
 }
 
 func SignDecisionArtifact(payload DecisionArtifactPayload, key []byte) (string, error) {

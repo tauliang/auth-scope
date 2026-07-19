@@ -430,6 +430,7 @@ func projectionStatusResponse(projection Projection, now time.Time) ProjectionSt
 		ProjectionID:   projection.ProjectionID,
 		MissionRef:     projection.MissionRef,
 		MissionVersion: projection.MissionVersion,
+		TenantID:       projection.TenantID,
 		Type:           projection.Type,
 		Status:         status,
 		ExpiresAt:      projection.ExpiresAt,

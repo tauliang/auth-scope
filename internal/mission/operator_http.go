@@ -26,6 +26,9 @@ func (h *Handler) operationsSummary(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !scopeListQueryToAdmin(w, r, &query) {
+		return
+	}
 	result, err := h.services.Operator.OperationsSummary(query)
 	if err != nil {
 		writeServiceError(w, err)
@@ -39,6 +42,9 @@ func (h *Handler) listMissions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !scopeListQueryToAdmin(w, r, &query) {
+		return
+	}
 	result, err := h.services.Operator.ListMissions(query)
 	if err != nil {
 		writeServiceError(w, err)
@@ -50,6 +56,9 @@ func (h *Handler) listMissions(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listProposals(w http.ResponseWriter, r *http.Request) {
 	query, ok := decodeListQuery(w, r)
 	if !ok {
+		return
+	}
+	if !scopeListQueryToAdmin(w, r, &query) {
 		return
 	}
 	result, err := h.services.Operator.ListProposals(query)
@@ -66,12 +75,18 @@ func (h *Handler) getProposal(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	if !ensureAdminTenantAccess(w, r, result.TenantID) {
+		return
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) listExpansions(w http.ResponseWriter, r *http.Request) {
 	query, ok := decodeListQuery(w, r)
 	if !ok {
+		return
+	}
+	if !scopeListQueryToAdmin(w, r, &query) {
 		return
 	}
 	result, err := h.services.Operator.ListExpansions(query)
@@ -85,6 +100,9 @@ func (h *Handler) listExpansions(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listAgents(w http.ResponseWriter, r *http.Request) {
 	query, ok := decodeListQuery(w, r)
 	if !ok {
+		return
+	}
+	if !scopeListQueryToAdmin(w, r, &query) {
 		return
 	}
 	result, err := h.services.Operator.ListAgents(query)
@@ -113,6 +131,9 @@ func (h *Handler) listProjections(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !scopeListQueryToAdmin(w, r, &query) {
+		return
+	}
 	result, err := h.services.Operator.ListProjections(query)
 	if err != nil {
 		writeServiceError(w, err)
@@ -127,6 +148,9 @@ func (h *Handler) getContainmentRule(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
+	if !ensureAdminTenantAccess(w, r, result.TenantID) {
+		return
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -135,12 +159,19 @@ func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !scopeListQueryToAdmin(w, r, &query) {
+		return
+	}
 	result, err := h.services.Operator.ListEvents(query)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func scopeListQueryToAdmin(w http.ResponseWriter, r *http.Request, query *ListQuery) bool {
+	return bindAdminTenant(w, r, &query.TenantID)
 }
 
 func decodeListQuery(w http.ResponseWriter, r *http.Request) (ListQuery, bool) {

@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -47,17 +48,35 @@ func NewBearerAdminAuthenticator(token string, principal Principal) *BearerAdmin
 }
 
 func AdminAuthenticatorFromEnv() AdminAuthenticator {
+	authenticator, err := AdminAuthenticatorFromEnvStrict(false)
+	if err != nil {
+		return NewMultiBearerAdminAuthenticator(nil)
+	}
+	return authenticator
+}
+
+func AdminAuthenticatorFromEnvStrict(production bool) (AdminAuthenticator, error) {
 	if raw := strings.TrimSpace(os.Getenv("AUTH_SCOPE_ADMIN_CREDENTIALS")); raw != "" {
 		var credentials []AdminCredential
 		if err := json.Unmarshal([]byte(raw), &credentials); err != nil {
-			return NewMultiBearerAdminAuthenticator(nil)
+			return nil, fmt.Errorf("parse AUTH_SCOPE_ADMIN_CREDENTIALS: %w", err)
 		}
-		return NewCredentialAdminAuthenticator(credentials)
+		authenticator := NewCredentialAdminAuthenticator(credentials)
+		if production && len(authenticator.principals) == 0 {
+			return nil, errors.New("AUTH_SCOPE_ADMIN_CREDENTIALS must contain at least one valid credential")
+		}
+		return authenticator, nil
 	}
 	token := strings.TrimSpace(os.Getenv("AUTH_SCOPE_ADMIN_TOKEN"))
 	principal := Principal{
 		Subject: strings.TrimSpace(os.Getenv("AUTH_SCOPE_ADMIN_SUBJECT")),
 		Issuer:  strings.TrimSpace(os.Getenv("AUTH_SCOPE_ADMIN_ISSUER")),
+	}
+	if production {
+		if token == "" || principal.Subject == "" || principal.Issuer == "" {
+			return nil, errors.New("AUTH_SCOPE_ADMIN_TOKEN, AUTH_SCOPE_ADMIN_SUBJECT, and AUTH_SCOPE_ADMIN_ISSUER are required in production")
+		}
+		return NewBearerAdminAuthenticator(token, principal), nil
 	}
 	if principal.Subject == "" {
 		principal.Subject = defaultDevelopmentAdminSubject
@@ -72,9 +91,9 @@ func AdminAuthenticatorFromEnv() AdminAuthenticator {
 				Subject: "bob@example.com",
 				Issuer:  defaultDevelopmentAdminIssuer,
 			},
-		})
+		}), nil
 	}
-	return NewBearerAdminAuthenticator(token, principal)
+	return NewBearerAdminAuthenticator(token, principal), nil
 }
 
 func NewCredentialAdminAuthenticator(credentials []AdminCredential) *MultiBearerAdminAuthenticator {

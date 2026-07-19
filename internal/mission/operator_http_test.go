@@ -88,3 +88,73 @@ func TestOperatorAPICollectionsSummaryAndValidation(t *testing.T) {
 		t.Fatalf("empty collection = %d %s", empty.Code, empty.Body.String())
 	}
 }
+
+func TestTenantScopedAdminCannotCrossTenantBoundaries(t *testing.T) {
+	service := testService()
+	demoProposal := validProposalRequest()
+	demoProposal.TenantID = "demo"
+	if _, err := service.CreateProposal(demoProposal); err != nil {
+		t.Fatalf("create demo proposal: %v", err)
+	}
+	otherProposal := validProposalRequest()
+	otherProposal.TenantID = "other"
+	otherProposal.Agent.InstanceID = "inst_other"
+	if _, err := service.CreateProposal(otherProposal); err != nil {
+		t.Fatalf("create other proposal: %v", err)
+	}
+
+	authenticator := NewBearerAdminAuthenticator("tenant-token", Principal{
+		Subject:       "operator@example.com",
+		Issuer:        "https://idp.example.com",
+		TenantSubject: "demo",
+	})
+	router := NewHandlerWithAdminAuthenticator(service, authenticator).Routes()
+
+	list := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/mission-proposals", nil)
+	listReq.Header.Set("Authorization", "Bearer tenant-token")
+	router.ServeHTTP(list, listReq)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", list.Code, list.Body.String())
+	}
+	var page CollectionPage[MissionProposal]
+	decodeTestJSON(t, list.Body.Bytes(), &page)
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].TenantID != "demo" {
+		t.Fatalf("tenant-scoped page = %#v", page)
+	}
+
+	crossTenantList := httptest.NewRecorder()
+	crossTenantReq := httptest.NewRequest(http.MethodGet, "/v1/mission-proposals?tenant_id=other", nil)
+	crossTenantReq.Header.Set("Authorization", "Bearer tenant-token")
+	router.ServeHTTP(crossTenantList, crossTenantReq)
+	if crossTenantList.Code != http.StatusForbidden {
+		t.Fatalf("cross-tenant list status = %d body=%s", crossTenantList.Code, crossTenantList.Body.String())
+	}
+
+	createOther := httptest.NewRecorder()
+	createReq := jsonRequestAsAdmin(http.MethodPost, "/v1/mission-proposals", otherProposal, "tenant-token")
+	router.ServeHTTP(createOther, createReq)
+	if createOther.Code != http.StatusForbidden {
+		t.Fatalf("cross-tenant create status = %d body=%s", createOther.Code, createOther.Body.String())
+	}
+
+	detail := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/v1/mission-proposals/"+page.Items[0].ProposalID, nil)
+	detailReq.Header.Set("Authorization", "Bearer tenant-token")
+	router.ServeHTTP(detail, detailReq)
+	if detail.Code != http.StatusOK {
+		t.Fatalf("tenant proposal detail status = %d body=%s", detail.Code, detail.Body.String())
+	}
+
+	rule, err := service.CreateContainmentRule(ContainmentRule{TenantID: "demo", TargetType: ContainmentTargetTenant, TargetID: "demo", CreatedBy: Principal{Subject: "admin"}})
+	if err != nil {
+		t.Fatalf("create containment rule: %v", err)
+	}
+	ruleDetail := httptest.NewRecorder()
+	ruleReq := httptest.NewRequest(http.MethodGet, "/v1/containment-rules/"+rule.RuleID, nil)
+	ruleReq.Header.Set("Authorization", "Bearer tenant-token")
+	router.ServeHTTP(ruleDetail, ruleReq)
+	if ruleDetail.Code != http.StatusOK {
+		t.Fatalf("tenant containment detail status = %d body=%s", ruleDetail.Code, ruleDetail.Body.String())
+	}
+}

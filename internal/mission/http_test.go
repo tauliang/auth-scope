@@ -3,6 +3,7 @@ package mission
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -52,6 +53,350 @@ func TestCreateProposalAPIValidation(t *testing.T) {
 	router.ServeHTTP(missingRequired, jsonRequest(http.MethodPost, "/v1/mission-proposals", CreateProposalRequest{}))
 	if missingRequired.Code != http.StatusBadRequest {
 		t.Fatalf("missing required status = %d, want %d", missingRequired.Code, http.StatusBadRequest)
+	}
+}
+
+func TestAPIBodyHandlersRejectMalformedJSON(t *testing.T) {
+	router := testRouter()
+	endpoints := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/access/v1/evaluation"},
+		{http.MethodPost, "/access/v1/evaluations"},
+		{http.MethodPost, "/v1/agents"},
+		{http.MethodPost, "/v1/agents/agent-1/revoke"},
+		{http.MethodPost, "/v1/mission-proposals"},
+		{http.MethodPost, "/v1/mission-proposals/proposal-1/approve"},
+		{http.MethodPost, "/v1/missions/mref-1/evaluate"},
+		{http.MethodPost, "/v1/missions/mref-1/authority/negotiations"},
+		{http.MethodPost, "/v1/missions/mref-1/expansion-requests"},
+		{http.MethodPost, "/v1/missions/mref-1/resume"},
+		{http.MethodPost, "/v1/missions/mref-1/delegate"},
+		{http.MethodPost, "/v1/missions/mref-1/revoke"},
+		{http.MethodPost, "/v1/missions/mref-1/complete"},
+		{http.MethodPost, "/v1/expansion-requests/exp-1/approve"},
+		{http.MethodPost, "/v1/expansion-requests/exp-1/deny"},
+		{http.MethodPost, "/v1/expansion-requests/exp-1/approvals"},
+		{http.MethodPost, "/v1/decision-artifacts/verify"},
+		{http.MethodPost, "/v1/tool-contracts"},
+		{http.MethodPost, "/v1/tool-calls/authorize"},
+		{http.MethodPost, "/v1/missions/mref-1/projections"},
+		{http.MethodPost, "/v1/projections/proj-1/revoke"},
+		{http.MethodPost, "/v1/projections/verify"},
+		{http.MethodPost, "/v1/missions/mref-1/leases"},
+		{http.MethodPost, "/v1/leases/lease-1/refresh"},
+		{http.MethodPost, "/v1/approval-rules"},
+		{http.MethodPost, "/v1/containment-rules"},
+		{http.MethodPost, "/v1/containment-rules/rule-1/lift"},
+		{http.MethodPost, "/v1/integrations/github/repositories"},
+		{http.MethodPost, "/v1/integrations/github/check-runs/plan"},
+		{http.MethodPost, "/v1/integrations/okta/app-bindings"},
+		{http.MethodPost, "/v1/integrations/okta/authority-context/resolve"},
+		{http.MethodPost, "/v1/integrations/entra/app-registrations"},
+		{http.MethodPost, "/v1/integrations/entra/authority-context/resolve"},
+		{http.MethodPost, "/v1/integrations/slack/workspace-bindings"},
+		{http.MethodPost, "/v1/integrations/slack/message-actions/authorize"},
+		{http.MethodPost, "/v1/integrations/atlassian/site-bindings"},
+		{http.MethodPost, "/v1/integrations/atlassian/jira/issues/authorize"},
+		{http.MethodPost, "/v1/integrations/atlassian/confluence/pages/authorize"},
+		{http.MethodPost, "/v1/integrations/salesforce/org-bindings"},
+		{http.MethodPost, "/v1/integrations/salesforce/records/authorize"},
+	}
+	for _, endpoint := range endpoints {
+		t.Run(endpoint.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, malformedJSONRequest(endpoint.method, endpoint.path))
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("%s %s status = %d, want %d body=%s", endpoint.method, endpoint.path, rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestAPIBodyHandlersRejectTrailingJSON(t *testing.T) {
+	router := testRouter()
+	req := httptest.NewRequest(http.MethodPost, "/v1/mission-proposals", bytes.NewBufferString(`{} {}`))
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+defaultDevelopmentAdminToken)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !bytes.Contains(rec.Body.Bytes(), []byte("single JSON object")) {
+		t.Fatalf("trailing JSON response = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAPIHandlersMapNotFoundServiceErrors(t *testing.T) {
+	router := testRouter()
+	validEvaluation := EvaluateRequest{
+		MissionVersionSeen: 1,
+		Actor:              Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Action:             Action{Type: "tool_call", Resource: ActionResource{Type: "drive_folder", ID: "board"}, Operation: "read"},
+	}
+	validNegotiation := CreateAuthorityNegotiationRequest{
+		MissionVersionSeen: 1,
+		Actor:              Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		RequestedAuthority: AuthorityRegion{Resources: []ResourceGrant{{Type: "drive_folder", ID: "board", Actions: []string{"read"}}}},
+	}
+	validExpansion := CreateExpansionRequest{
+		MissionVersionSeen: 1,
+		Requester:          Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Action:             Action{Type: "tool_call", Resource: ActionResource{Type: "drive_folder", ID: "board"}, Operation: "read"},
+		RequestedAuthority: AuthorityRegion{Resources: []ResourceGrant{{Type: "drive_folder", ID: "board", Actions: []string{"read"}}}},
+	}
+	tests := []struct {
+		method string
+		path   string
+		body   any
+	}{
+		{http.MethodGet, "/v1/agents/agent-missing", nil},
+		{http.MethodPost, "/v1/agents/agent-missing/revoke", StateChangeRequest{Reason: "test"}},
+		{http.MethodPost, "/v1/mission-proposals/proposal-missing/approve", ApproveProposalRequest{}},
+		{http.MethodPost, "/v1/missions/mref-missing/evaluate", validEvaluation},
+		{http.MethodPost, "/v1/missions/mref-missing/authority/negotiations", validNegotiation},
+		{http.MethodPost, "/v1/missions/mref-missing/expansion-requests", validExpansion},
+		{http.MethodPost, "/v1/missions/mref-missing/resume", ResumeRequest{MissionVersionSeen: 1, Actor: validEvaluation.Actor}},
+		{http.MethodPost, "/v1/missions/mref-missing/delegate", DelegationRequest{DelegatingActor: validEvaluation.Actor}},
+		{http.MethodPost, "/v1/missions/mref-missing/revoke", StateChangeRequest{Reason: "test"}},
+		{http.MethodPost, "/v1/missions/mref-missing/complete", StateChangeRequest{Reason: "test"}},
+		{http.MethodGet, "/v1/missions/mref-missing/introspect", nil},
+		{http.MethodGet, "/v1/missions/mref-missing/lineage", nil},
+		{http.MethodGet, "/v1/expansion-requests/exp-missing", nil},
+		{http.MethodPost, "/v1/expansion-requests/exp-missing/approve", ExpansionDecisionRequest{}},
+		{http.MethodPost, "/v1/expansion-requests/exp-missing/deny", ExpansionDecisionRequest{Reason: "test"}},
+		{http.MethodPost, "/v1/expansion-requests/exp-missing/approvals", SubmitExpansionApprovalRequest{}},
+		{http.MethodGet, "/v1/authority/negotiations/neg-missing", nil},
+		{http.MethodGet, "/v1/tool-contracts/tool.missing", nil},
+		{http.MethodPost, "/v1/tool-calls/authorize", AuthorizeToolCallRequest{MissionRef: "mref-missing", ToolName: "tool.missing", Actor: validEvaluation.Actor}},
+		{http.MethodPost, "/v1/missions/mref-missing/projections", CreateProjectionRequest{MissionVersionSeen: 1, Actor: validEvaluation.Actor, Type: ProjectionTypeMCPContext}},
+		{http.MethodGet, "/v1/projections/proj-missing/status", nil},
+		{http.MethodPost, "/v1/projections/proj-missing/revoke", StateChangeRequest{Reason: "test"}},
+		{http.MethodPost, "/v1/missions/mref-missing/leases", CreateLeaseRequest{MissionVersionSeen: 1, Actor: validEvaluation.Actor}},
+		{http.MethodPost, "/v1/leases/lease-missing/refresh", RefreshLeaseRequest{Actor: validEvaluation.Actor}},
+		{http.MethodPost, "/v1/containment-rules/rule-missing/lift", StateChangeRequest{Reason: "test"}},
+		{http.MethodGet, "/v1/containment-rules/rule-missing/blast-radius", nil},
+	}
+	for _, test := range tests {
+		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			want := http.StatusNotFound
+			if test.path == "/v1/missions/mref-missing/delegate" {
+				want = http.StatusBadRequest
+			}
+			rec := httptest.NewRecorder()
+			var req *http.Request
+			if test.body == nil {
+				req = httptest.NewRequest(test.method, test.path, nil)
+				req.Header.Set("Authorization", "Bearer "+defaultDevelopmentAdminToken)
+			} else {
+				req = jsonRequest(test.method, test.path, test.body)
+			}
+			router.ServeHTTP(rec, req)
+			if rec.Code != want {
+				t.Fatalf("status = %d, want %d body=%s", rec.Code, want, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestAPIIntegrationBindingListsAreTenantScoped(t *testing.T) {
+	service := testService()
+	admin := Principal{Subject: "admin@example.com", Issuer: "https://idp.example.com"}
+	if _, err := service.CreateGitHubRepositoryBinding(CreateGitHubRepositoryBindingRequest{TenantID: "demo", Repository: "acme/demo", MissionRef: "mref-demo"}, admin); err != nil {
+		t.Fatalf("CreateGitHubRepositoryBinding demo: %v", err)
+	}
+	if _, err := service.CreateGitHubRepositoryBinding(CreateGitHubRepositoryBindingRequest{TenantID: "other", Repository: "acme/other", MissionRef: "mref-other"}, admin); err != nil {
+		t.Fatalf("CreateGitHubRepositoryBinding other: %v", err)
+	}
+	if _, err := service.CreateOktaAppBinding(CreateOktaAppBindingRequest{TenantID: "demo", Issuer: "https://demo.okta.com", ClientID: "client-demo", MissionRef: "mref-demo"}, admin); err != nil {
+		t.Fatalf("CreateOktaAppBinding demo: %v", err)
+	}
+	if _, err := service.CreateOktaAppBinding(CreateOktaAppBindingRequest{TenantID: "other", Issuer: "https://other.okta.com", ClientID: "client-other", MissionRef: "mref-other"}, admin); err != nil {
+		t.Fatalf("CreateOktaAppBinding other: %v", err)
+	}
+	if _, err := service.CreateEntraAppRegistration(CreateEntraAppRegistrationRequest{TenantID: "demo", Issuer: "https://login.microsoftonline.com/demo/v2.0", ClientID: "client-demo", MissionRef: "mref-demo"}, admin); err != nil {
+		t.Fatalf("CreateEntraAppRegistration demo: %v", err)
+	}
+	if _, err := service.CreateEntraAppRegistration(CreateEntraAppRegistrationRequest{TenantID: "other", Issuer: "https://login.microsoftonline.com/other/v2.0", ClientID: "client-other", MissionRef: "mref-other"}, admin); err != nil {
+		t.Fatalf("CreateEntraAppRegistration other: %v", err)
+	}
+	if _, err := service.CreateSlackWorkspaceBinding(CreateSlackWorkspaceBindingRequest{TenantID: "demo", WorkspaceID: "TDEMO", WorkspaceURL: "https://demo.slack.com", MissionRef: "mref-demo"}, admin); err != nil {
+		t.Fatalf("CreateSlackWorkspaceBinding demo: %v", err)
+	}
+	if _, err := service.CreateSlackWorkspaceBinding(CreateSlackWorkspaceBindingRequest{TenantID: "other", WorkspaceID: "TOTHER", WorkspaceURL: "https://other.slack.com", MissionRef: "mref-other"}, admin); err != nil {
+		t.Fatalf("CreateSlackWorkspaceBinding other: %v", err)
+	}
+	if _, err := service.CreateAtlassianSiteBinding(CreateAtlassianSiteBindingRequest{TenantID: "demo", SiteURL: "https://demo.atlassian.net", MissionRef: "mref-demo"}, admin); err != nil {
+		t.Fatalf("CreateAtlassianSiteBinding demo: %v", err)
+	}
+	if _, err := service.CreateAtlassianSiteBinding(CreateAtlassianSiteBindingRequest{TenantID: "other", SiteURL: "https://other.atlassian.net", MissionRef: "mref-other"}, admin); err != nil {
+		t.Fatalf("CreateAtlassianSiteBinding other: %v", err)
+	}
+	if _, err := service.CreateSalesforceOrgBinding(CreateSalesforceOrgBindingRequest{TenantID: "demo", InstanceURL: "https://demo.my.salesforce.com", MissionRef: "mref-demo"}, admin); err != nil {
+		t.Fatalf("CreateSalesforceOrgBinding demo: %v", err)
+	}
+	if _, err := service.CreateSalesforceOrgBinding(CreateSalesforceOrgBindingRequest{TenantID: "other", InstanceURL: "https://other.my.salesforce.com", MissionRef: "mref-other"}, admin); err != nil {
+		t.Fatalf("CreateSalesforceOrgBinding other: %v", err)
+	}
+
+	router := NewHandlerWithAdminAuthenticator(service, NewBearerAdminAuthenticator("tenant-token", Principal{
+		Subject:       "operator@example.com",
+		Issuer:        "https://idp.example.com",
+		TenantSubject: "demo",
+	})).Routes()
+	get := func(path string) *httptest.ResponseRecorder {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer tenant-token")
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d body=%s", path, rec.Code, rec.Body.String())
+		}
+		return rec
+	}
+
+	var githubList struct {
+		Repositories []GitHubRepositoryBinding `json:"repositories"`
+	}
+	decodeTestJSON(t, get("/v1/integrations/github/repositories").Body.Bytes(), &githubList)
+	if len(githubList.Repositories) != 1 || githubList.Repositories[0].TenantID != "demo" {
+		t.Fatalf("tenant-scoped GitHub repositories = %#v", githubList.Repositories)
+	}
+	var oktaList struct {
+		AppBindings []OktaAppBinding `json:"app_bindings"`
+	}
+	decodeTestJSON(t, get("/v1/integrations/okta/app-bindings").Body.Bytes(), &oktaList)
+	if len(oktaList.AppBindings) != 1 || oktaList.AppBindings[0].TenantID != "demo" {
+		t.Fatalf("tenant-scoped Okta bindings = %#v", oktaList.AppBindings)
+	}
+	var entraList struct {
+		AppRegistrations []EntraAppRegistration `json:"app_registrations"`
+	}
+	decodeTestJSON(t, get("/v1/integrations/entra/app-registrations").Body.Bytes(), &entraList)
+	if len(entraList.AppRegistrations) != 1 || entraList.AppRegistrations[0].TenantID != "demo" {
+		t.Fatalf("tenant-scoped Entra registrations = %#v", entraList.AppRegistrations)
+	}
+	var slackList struct {
+		WorkspaceBindings []SlackWorkspaceBinding `json:"workspace_bindings"`
+	}
+	decodeTestJSON(t, get("/v1/integrations/slack/workspace-bindings").Body.Bytes(), &slackList)
+	if len(slackList.WorkspaceBindings) != 1 || slackList.WorkspaceBindings[0].TenantID != "demo" {
+		t.Fatalf("tenant-scoped Slack bindings = %#v", slackList.WorkspaceBindings)
+	}
+	var atlassianList struct {
+		SiteBindings []AtlassianSiteBinding `json:"site_bindings"`
+	}
+	decodeTestJSON(t, get("/v1/integrations/atlassian/site-bindings").Body.Bytes(), &atlassianList)
+	if len(atlassianList.SiteBindings) != 1 || atlassianList.SiteBindings[0].TenantID != "demo" {
+		t.Fatalf("tenant-scoped Atlassian bindings = %#v", atlassianList.SiteBindings)
+	}
+	var salesforceList struct {
+		OrgBindings []SalesforceOrgBinding `json:"org_bindings"`
+	}
+	decodeTestJSON(t, get("/v1/integrations/salesforce/org-bindings").Body.Bytes(), &salesforceList)
+	if len(salesforceList.OrgBindings) != 1 || salesforceList.OrgBindings[0].TenantID != "demo" {
+		t.Fatalf("tenant-scoped Salesforce bindings = %#v", salesforceList.OrgBindings)
+	}
+
+	crossTenantCreates := []struct {
+		path string
+		body any
+	}{
+		{"/v1/integrations/github/repositories", CreateGitHubRepositoryBindingRequest{TenantID: "other"}},
+		{"/v1/integrations/okta/app-bindings", CreateOktaAppBindingRequest{TenantID: "other"}},
+		{"/v1/integrations/entra/app-registrations", CreateEntraAppRegistrationRequest{TenantID: "other"}},
+		{"/v1/integrations/slack/workspace-bindings", CreateSlackWorkspaceBindingRequest{TenantID: "other"}},
+		{"/v1/integrations/atlassian/site-bindings", CreateAtlassianSiteBindingRequest{TenantID: "other"}},
+		{"/v1/integrations/salesforce/org-bindings", CreateSalesforceOrgBindingRequest{TenantID: "other"}},
+	}
+	for _, test := range crossTenantCreates {
+		t.Run(test.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, jsonRequestAsAdmin(http.MethodPost, test.path, test.body, "tenant-token"))
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("cross-tenant create status = %d, want %d body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestAPIListHandlersMapServiceErrors(t *testing.T) {
+	service := &erroringHandlerService{Service: testService(), err: errors.New("forced list failure")}
+	router := erroringTestRouter(service)
+
+	tests := []string{
+		"/v1/operations/summary",
+		"/v1/missions",
+		"/v1/mission-proposals",
+		"/v1/expansion-requests",
+		"/v1/agents",
+		"/v1/tool-contracts",
+		"/v1/projections",
+		"/v1/events",
+		"/v1/approval-rules",
+		"/v1/containment-rules",
+		"/v1/integrations/github/repositories",
+		"/v1/integrations/okta/app-bindings",
+		"/v1/integrations/entra/app-registrations",
+		"/v1/integrations/slack/workspace-bindings",
+		"/v1/integrations/atlassian/site-bindings",
+		"/v1/integrations/salesforce/org-bindings",
+	}
+	for _, path := range tests {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestAPICreateAndRuntimeHandlersMapServiceErrors(t *testing.T) {
+	service := &erroringHandlerService{Service: testService(), err: errors.New("forced service failure")}
+	router := erroringTestRouter(service)
+	tests := []struct {
+		path string
+		body any
+	}{
+		{"/access/v1/evaluation", AuthZENEvaluationRequest{}},
+		{"/access/v1/evaluations", AuthZENEvaluationsRequest{}},
+		{"/v1/agents", RegisterAgentRequest{}},
+		{"/v1/mission-proposals", CreateProposalRequest{}},
+		{"/v1/missions/mref-1/evaluate", EvaluateRequest{}},
+		{"/v1/missions/mref-1/resume", ResumeRequest{}},
+		{"/v1/missions/mref-1/delegate", DelegationRequest{}},
+		{"/v1/missions/mref-1/authority/negotiations", CreateAuthorityNegotiationRequest{}},
+		{"/v1/missions/mref-1/expansion-requests", CreateExpansionRequest{}},
+		{"/v1/tool-contracts", ToolContract{}},
+		{"/v1/tool-calls/authorize", AuthorizeToolCallRequest{}},
+		{"/v1/missions/mref-1/projections", CreateProjectionRequest{}},
+		{"/v1/missions/mref-1/leases", CreateLeaseRequest{}},
+		{"/v1/leases/lease-1/refresh", RefreshLeaseRequest{}},
+		{"/v1/approval-rules", ApprovalRule{}},
+		{"/v1/containment-rules", ContainmentRule{}},
+		{"/v1/integrations/github/repositories", CreateGitHubRepositoryBindingRequest{}},
+		{"/v1/integrations/okta/app-bindings", CreateOktaAppBindingRequest{}},
+		{"/v1/integrations/okta/authority-context/resolve", ResolveOktaAuthorityContextRequest{}},
+		{"/v1/integrations/entra/app-registrations", CreateEntraAppRegistrationRequest{}},
+		{"/v1/integrations/entra/authority-context/resolve", ResolveEntraAuthorityContextRequest{}},
+		{"/v1/integrations/slack/workspace-bindings", CreateSlackWorkspaceBindingRequest{}},
+		{"/v1/integrations/slack/message-actions/authorize", AuthorizeSlackMessageActionRequest{}},
+		{"/v1/integrations/atlassian/site-bindings", CreateAtlassianSiteBindingRequest{}},
+		{"/v1/integrations/atlassian/jira/issues/authorize", AuthorizeAtlassianJiraIssueActionRequest{}},
+		{"/v1/integrations/atlassian/confluence/pages/authorize", AuthorizeAtlassianConfluencePageActionRequest{}},
+		{"/v1/integrations/salesforce/org-bindings", CreateSalesforceOrgBindingRequest{}},
+		{"/v1/integrations/salesforce/records/authorize", AuthorizeSalesforceRecordActionRequest{}},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, jsonRequest(http.MethodPost, test.path, test.body))
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -609,9 +954,215 @@ func jsonRequestAsAdmin(method string, path string, value any, token string) *ht
 	return req
 }
 
+func malformedJSONRequest(method string, path string) *http.Request {
+	req := httptest.NewRequest(method, path, bytes.NewBufferString("{"))
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+defaultDevelopmentAdminToken)
+	return req
+}
+
 func decodeTestJSON(t *testing.T, data []byte, dst any) {
 	t.Helper()
 	if err := json.Unmarshal(data, dst); err != nil {
 		t.Fatalf("decode JSON %s: %v", string(data), err)
 	}
+}
+
+type erroringHandlerService struct {
+	*Service
+	err error
+}
+
+func erroringTestRouter(service *erroringHandlerService) http.Handler {
+	return withTestAdminAuthorization(NewHandlerWithServices(HandlerServices{
+		Identity:        service,
+		Mission:         service,
+		Governance:      service,
+		Projection:      service,
+		GrandGovernance: service,
+		AuthZEN:         service,
+		Operator:        service,
+		GitHub:          service,
+		Okta:            service,
+		Entra:           service,
+		Slack:           service,
+		Atlassian:       service,
+		Salesforce:      service,
+	}, AdminAuthenticatorFromEnv()).Routes())
+}
+
+func (s *erroringHandlerService) RegisterAgent(RegisterAgentRequest) (RegisterAgentResponse, error) {
+	return RegisterAgentResponse{}, s.err
+}
+
+func (s *erroringHandlerService) CreateProposal(CreateProposalRequest) (CreateProposalResponse, error) {
+	return CreateProposalResponse{}, s.err
+}
+
+func (s *erroringHandlerService) Evaluate(string, EvaluateRequest) (EvaluateResponse, error) {
+	return EvaluateResponse{}, s.err
+}
+
+func (s *erroringHandlerService) Resume(string, ResumeRequest) (EvaluateResponse, error) {
+	return EvaluateResponse{}, s.err
+}
+
+func (s *erroringHandlerService) Delegate(string, DelegationRequest) (DelegationResponse, error) {
+	return DelegationResponse{}, s.err
+}
+
+func (s *erroringHandlerService) CreateExpansionRequest(string, CreateExpansionRequest) (ExpansionRequest, error) {
+	return ExpansionRequest{}, s.err
+}
+
+func (s *erroringHandlerService) RegisterToolContract(ToolContract) (ToolContract, error) {
+	return ToolContract{}, s.err
+}
+
+func (s *erroringHandlerService) AuthorizeToolCall(AuthorizeToolCallRequest) (AuthorizeToolCallResponse, error) {
+	return AuthorizeToolCallResponse{}, s.err
+}
+
+func (s *erroringHandlerService) CreateProjection(string, CreateProjectionRequest) (ProjectionResponse, error) {
+	return ProjectionResponse{}, s.err
+}
+
+func (s *erroringHandlerService) CreateMissionLease(string, CreateLeaseRequest) (LeaseResponse, error) {
+	return LeaseResponse{}, s.err
+}
+
+func (s *erroringHandlerService) RefreshMissionLease(string, RefreshLeaseRequest) (LeaseResponse, error) {
+	return LeaseResponse{}, s.err
+}
+
+func (s *erroringHandlerService) CreateApprovalRule(ApprovalRule) (ApprovalRule, error) {
+	return ApprovalRule{}, s.err
+}
+
+func (s *erroringHandlerService) CreateAuthorityNegotiation(string, CreateAuthorityNegotiationRequest) (AuthorityNegotiation, error) {
+	return AuthorityNegotiation{}, s.err
+}
+
+func (s *erroringHandlerService) CreateContainmentRule(ContainmentRule) (ContainmentRule, error) {
+	return ContainmentRule{}, s.err
+}
+
+func (s *erroringHandlerService) EvaluateAuthZEN(AuthZENEvaluationRequest) (AuthZENEvaluationResponse, error) {
+	return AuthZENEvaluationResponse{}, s.err
+}
+
+func (s *erroringHandlerService) EvaluateAuthZENBatch(AuthZENEvaluationsRequest) (AuthZENEvaluationsResponse, error) {
+	return AuthZENEvaluationsResponse{}, s.err
+}
+
+func (s *erroringHandlerService) OperationsSummary(ListQuery) (OperationsSummary, error) {
+	return OperationsSummary{}, s.err
+}
+
+func (s *erroringHandlerService) ListMissions(ListQuery) (CollectionPage[Mission], error) {
+	return CollectionPage[Mission]{}, s.err
+}
+
+func (s *erroringHandlerService) ListProposals(ListQuery) (CollectionPage[MissionProposal], error) {
+	return CollectionPage[MissionProposal]{}, s.err
+}
+
+func (s *erroringHandlerService) ListExpansions(ListQuery) (CollectionPage[ExpansionRequest], error) {
+	return CollectionPage[ExpansionRequest]{}, s.err
+}
+
+func (s *erroringHandlerService) ListAgents(ListQuery) (CollectionPage[AgentIdentity], error) {
+	return CollectionPage[AgentIdentity]{}, s.err
+}
+
+func (s *erroringHandlerService) ListToolContracts(ListQuery) (CollectionPage[ToolContract], error) {
+	return CollectionPage[ToolContract]{}, s.err
+}
+
+func (s *erroringHandlerService) ListProjections(ListQuery) (CollectionPage[Projection], error) {
+	return CollectionPage[Projection]{}, s.err
+}
+
+func (s *erroringHandlerService) ListEvents(ListQuery) (CollectionPage[Event], error) {
+	return CollectionPage[Event]{}, s.err
+}
+
+func (s *erroringHandlerService) ListApprovalRules() ([]ApprovalRule, error) {
+	return nil, s.err
+}
+
+func (s *erroringHandlerService) ListContainmentRules() ([]ContainmentRule, error) {
+	return nil, s.err
+}
+
+func (s *erroringHandlerService) CreateGitHubRepositoryBinding(CreateGitHubRepositoryBindingRequest, Principal) (GitHubRepositoryBinding, error) {
+	return GitHubRepositoryBinding{}, s.err
+}
+
+func (s *erroringHandlerService) ListGitHubRepositoryBindings() ([]GitHubRepositoryBinding, error) {
+	return nil, s.err
+}
+
+func (s *erroringHandlerService) CreateOktaAppBinding(CreateOktaAppBindingRequest, Principal) (OktaAppBinding, error) {
+	return OktaAppBinding{}, s.err
+}
+
+func (s *erroringHandlerService) ListOktaAppBindings() ([]OktaAppBinding, error) {
+	return nil, s.err
+}
+
+func (s *erroringHandlerService) ResolveOktaAuthorityContext(ResolveOktaAuthorityContextRequest) (OktaAuthorityContextResponse, error) {
+	return OktaAuthorityContextResponse{}, s.err
+}
+
+func (s *erroringHandlerService) CreateEntraAppRegistration(CreateEntraAppRegistrationRequest, Principal) (EntraAppRegistration, error) {
+	return EntraAppRegistration{}, s.err
+}
+
+func (s *erroringHandlerService) ListEntraAppRegistrations() ([]EntraAppRegistration, error) {
+	return nil, s.err
+}
+
+func (s *erroringHandlerService) ResolveEntraAuthorityContext(ResolveEntraAuthorityContextRequest) (EntraAuthorityContextResponse, error) {
+	return EntraAuthorityContextResponse{}, s.err
+}
+
+func (s *erroringHandlerService) CreateSlackWorkspaceBinding(CreateSlackWorkspaceBindingRequest, Principal) (SlackWorkspaceBinding, error) {
+	return SlackWorkspaceBinding{}, s.err
+}
+
+func (s *erroringHandlerService) ListSlackWorkspaceBindings() ([]SlackWorkspaceBinding, error) {
+	return nil, s.err
+}
+
+func (s *erroringHandlerService) AuthorizeSlackMessageAction(AuthorizeSlackMessageActionRequest) (SlackMessageAuthorizationResponse, error) {
+	return SlackMessageAuthorizationResponse{}, s.err
+}
+
+func (s *erroringHandlerService) CreateAtlassianSiteBinding(CreateAtlassianSiteBindingRequest, Principal) (AtlassianSiteBinding, error) {
+	return AtlassianSiteBinding{}, s.err
+}
+
+func (s *erroringHandlerService) ListAtlassianSiteBindings() ([]AtlassianSiteBinding, error) {
+	return nil, s.err
+}
+
+func (s *erroringHandlerService) AuthorizeAtlassianJiraIssueAction(AuthorizeAtlassianJiraIssueActionRequest) (AtlassianActionAuthorizationResponse, error) {
+	return AtlassianActionAuthorizationResponse{}, s.err
+}
+
+func (s *erroringHandlerService) AuthorizeAtlassianConfluencePageAction(AuthorizeAtlassianConfluencePageActionRequest) (AtlassianActionAuthorizationResponse, error) {
+	return AtlassianActionAuthorizationResponse{}, s.err
+}
+
+func (s *erroringHandlerService) CreateSalesforceOrgBinding(CreateSalesforceOrgBindingRequest, Principal) (SalesforceOrgBinding, error) {
+	return SalesforceOrgBinding{}, s.err
+}
+
+func (s *erroringHandlerService) ListSalesforceOrgBindings() ([]SalesforceOrgBinding, error) {
+	return nil, s.err
+}
+
+func (s *erroringHandlerService) AuthorizeSalesforceRecordAction(AuthorizeSalesforceRecordActionRequest) (SalesforceRecordActionAuthorizationResponse, error) {
+	return SalesforceRecordActionAuthorizationResponse{}, s.err
 }

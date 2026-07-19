@@ -55,8 +55,8 @@ type slackEvaluator struct {
 	service *Service
 }
 
-func (e slackEvaluator) Evaluate(missionRef string, req slackint.EvaluationRequest, context map[string]any) (slackint.EvaluationResponse, error) {
-	resp, err := e.service.Evaluate(missionRef, EvaluateRequest{
+func (e slackEvaluator) Evaluate(req slackint.EvaluationRequest) (slackint.EvaluationResponse, error) {
+	resp, err := e.service.Evaluate(req.MissionRef, EvaluateRequest{
 		MissionVersionSeen: req.MissionVersionSeen,
 		Actor:              missionActorFromSlack(req.Actor),
 		Action: Action{
@@ -68,7 +68,7 @@ func (e slackEvaluator) Evaluate(missionRef string, req slackint.EvaluationReque
 			},
 			Operation: req.Action.Operation,
 		},
-		Context: context,
+		Context: req.Context,
 	})
 	if err != nil {
 		return slackint.EvaluationResponse{}, err

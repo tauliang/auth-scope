@@ -62,6 +62,7 @@
           <div class="topbar-actions">
             <button class="button button-secondary" type="button" id="reset-run">Reset</button>
             <button class="button button-secondary" type="button" id="contain-agent">Contain agent</button>
+            <button class="button button-secondary" type="button" id="simulate-integration">Simulate integration</button>
             <button class="button button-primary" type="button" id="run-next">Run next action</button>
           </div>
         </header>
@@ -75,6 +76,35 @@
             <span class="status" id="run-status">ready</span>
           </div>
           <div class="action-list" id="action-list"></div>
+        </section>
+
+        <section class="integration-console">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Mission-critical integrations</span>
+              <h3>Enterprise control plane</h3>
+            </div>
+            <span class="status" id="integration-run-status">0 simulated</span>
+          </div>
+          <div class="integration-layout">
+            <div class="integration-list" id="integration-list"></div>
+            <article class="integration-detail">
+              <div class="integration-detail-heading">
+                <div class="integration-logo" id="integration-category">SC</div>
+                <div>
+                  <span class="eyebrow">Selected service</span>
+                  <h3 id="integration-title">GitHub</h3>
+                  <p id="integration-summary" class="muted"></p>
+                </div>
+              </div>
+              <dl class="integration-meta">
+                <div><dt>Contract</dt><dd class="mono" id="integration-contract"></dd></div>
+                <div><dt>Binding</dt><dd id="integration-binding"></dd></div>
+                <div><dt>Surface</dt><dd id="integration-surface"></dd></div>
+              </dl>
+              <div class="fact-list" id="integration-facts"></div>
+            </article>
+          </div>
         </section>
 
         <section class="decision-grid">
@@ -116,7 +146,7 @@
           <div class="section-heading">
             <div>
               <span class="eyebrow">Integration preview</span>
-              <h3>GitHub check</h3>
+              <h3 id="integration-preview-title">GitHub check</h3>
             </div>
             <span class="status" id="check-status">neutral</span>
           </div>

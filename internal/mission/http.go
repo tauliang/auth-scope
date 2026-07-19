@@ -44,6 +44,8 @@ func NewHandlerWithOptions(service *Service, authenticator AdminAuthenticator, o
 		Okta:            service,
 		Entra:           service,
 		Slack:           service,
+		Atlassian:       service,
+		Salesforce:      service,
 	}, authenticator, options)
 }
 
@@ -121,6 +123,13 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("POST /v1/integrations/slack/workspace-bindings", h.requireAdmin(http.HandlerFunc(h.createSlackWorkspaceBinding)))
 	mux.Handle("GET /v1/integrations/slack/workspace-bindings", h.requireAdmin(http.HandlerFunc(h.listSlackWorkspaceBindings)))
 	mux.HandleFunc("POST /v1/integrations/slack/message-actions/authorize", h.authorizeSlackMessageAction)
+	mux.Handle("POST /v1/integrations/atlassian/site-bindings", h.requireAdmin(http.HandlerFunc(h.createAtlassianSiteBinding)))
+	mux.Handle("GET /v1/integrations/atlassian/site-bindings", h.requireAdmin(http.HandlerFunc(h.listAtlassianSiteBindings)))
+	mux.HandleFunc("POST /v1/integrations/atlassian/jira/issues/authorize", h.authorizeAtlassianJiraIssueAction)
+	mux.HandleFunc("POST /v1/integrations/atlassian/confluence/pages/authorize", h.authorizeAtlassianConfluencePageAction)
+	mux.Handle("POST /v1/integrations/salesforce/org-bindings", h.requireAdmin(http.HandlerFunc(h.createSalesforceOrgBinding)))
+	mux.Handle("GET /v1/integrations/salesforce/org-bindings", h.requireAdmin(http.HandlerFunc(h.listSalesforceOrgBindings)))
+	mux.HandleFunc("POST /v1/integrations/salesforce/records/authorize", h.authorizeSalesforceRecordAction)
 	mux.Handle("GET /v1/events", h.requireAdmin(http.HandlerFunc(h.events)))
 	mux.Handle("GET /v1/events/stream", h.requireAdmin(http.HandlerFunc(h.eventsStream)))
 	return requestID(mux)
@@ -198,6 +207,10 @@ func (h *Handler) discovery(w http.ResponseWriter, r *http.Request) {
 			"okta_integration":          true,
 			"entra_integration":         true,
 			"slack_integration":         true,
+			"atlassian_integration":     true,
+			"jira_integration":          true,
+			"confluence_integration":    true,
+			"salesforce_integration":    true,
 			"mission_proposals":         true,
 			"delegation":                true,
 			"expansion_requests":        true,

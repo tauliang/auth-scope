@@ -66,6 +66,11 @@ func TestOpenAPIDocumentsHTTPRouteInventory(t *testing.T) {
 		"/v1/integrations/okta/authority-context/resolve",
 		"/v1/integrations/slack/workspace-bindings",
 		"/v1/integrations/slack/message-actions/authorize",
+		"/v1/integrations/atlassian/site-bindings",
+		"/v1/integrations/atlassian/jira/issues/authorize",
+		"/v1/integrations/atlassian/confluence/pages/authorize",
+		"/v1/integrations/salesforce/org-bindings",
+		"/v1/integrations/salesforce/records/authorize",
 		"/v1/events",
 		"/v1/events/stream",
 	}

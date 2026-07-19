@@ -1,10 +1,14 @@
 package github
 
-import "time"
+import (
+	"time"
+
+	"github.com/tauliang/auth-scope/internal/mission/integrations/contract"
+)
 
 const (
-	RepositoryBindingStatusActive   = "active"
-	RepositoryBindingStatusDisabled = "disabled"
+	RepositoryBindingStatusActive   = contract.BindingStatusActive
+	RepositoryBindingStatusDisabled = contract.BindingStatusDisabled
 
 	WebhookDeliveryStatusAccepted  = "accepted"
 	WebhookDeliveryStatusDuplicate = "duplicate"
@@ -16,16 +20,8 @@ const (
 	CheckConclusionNeutral        = "neutral"
 )
 
-type Principal struct {
-	Subject string `json:"subject"`
-	Issuer  string `json:"issuer"`
-}
-
-type Actor struct {
-	AgentInstanceID string `json:"agent_instance_id"`
-	ClientID        string `json:"client_id"`
-	KeyThumbprint   string `json:"key_thumbprint,omitempty"`
-}
+type Principal = contract.Principal
+type Actor = contract.Actor
 
 type RepositoryBinding struct {
 	BindingID       string            `json:"binding_id"`

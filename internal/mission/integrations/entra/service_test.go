@@ -68,13 +68,15 @@ func (s *entraMemoryStore) ListAppRegistrations() ([]AppRegistration, error) {
 type entraEvaluator struct {
 	gotMissionRef string
 	gotContext    map[string]any
+	gotRequest    EvaluationRequest
 	response      EvaluationResponse
 	err           error
 }
 
-func (e *entraEvaluator) Evaluate(missionRef string, _ EvaluationRequest, context map[string]any) (EvaluationResponse, error) {
-	e.gotMissionRef = missionRef
-	e.gotContext = context
+func (e *entraEvaluator) Evaluate(req EvaluationRequest) (EvaluationResponse, error) {
+	e.gotMissionRef = req.MissionRef
+	e.gotContext = req.Context
+	e.gotRequest = req
 	if e.err != nil {
 		return EvaluationResponse{}, e.err
 	}

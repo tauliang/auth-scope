@@ -68,13 +68,15 @@ func (s *oktaMemoryStore) ListAppBindings() ([]AppBinding, error) {
 type oktaEvaluator struct {
 	gotMissionRef string
 	gotContext    map[string]any
+	gotRequest    EvaluationRequest
 	response      EvaluationResponse
 	err           error
 }
 
-func (e *oktaEvaluator) Evaluate(missionRef string, _ EvaluationRequest, context map[string]any) (EvaluationResponse, error) {
-	e.gotMissionRef = missionRef
-	e.gotContext = context
+func (e *oktaEvaluator) Evaluate(req EvaluationRequest) (EvaluationResponse, error) {
+	e.gotMissionRef = req.MissionRef
+	e.gotContext = req.Context
+	e.gotRequest = req
 	if e.err != nil {
 		return EvaluationResponse{}, e.err
 	}

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tauliang/auth-scope/internal/mission/integrations/contract"
 )
 
-type Clock interface {
-	Now() time.Time
-}
+type Clock = contract.Clock
 
 type Store interface {
 	SaveWorkspaceBinding(WorkspaceBinding) error
@@ -18,13 +18,9 @@ type Store interface {
 	ListWorkspaceBindings() ([]WorkspaceBinding, error)
 }
 
-type Evaluator interface {
-	Evaluate(string, EvaluationRequest, map[string]any) (EvaluationResponse, error)
-}
+type Evaluator = contract.Evaluator
 
-type EventSink interface {
-	AppendEvent(Event) error
-}
+type EventSink = contract.EventSink
 
 type Config struct {
 	Store      Store
@@ -225,7 +221,10 @@ func (s *Service) AuthorizeMessageAction(req AuthorizeMessageActionRequest) (Mes
 		if s.evaluator == nil {
 			return MessageAuthorizationResponse{}, fmt.Errorf("slack evaluator is not configured")
 		}
-		decision, err := s.evaluator.Evaluate(binding.MissionRef, *req.Evaluation, context)
+		evalReq := *req.Evaluation
+		evalReq.MissionRef = binding.MissionRef
+		evalReq.Context = context
+		decision, err := s.evaluator.Evaluate(evalReq)
 		if err != nil {
 			return MessageAuthorizationResponse{}, err
 		}
@@ -302,23 +301,15 @@ func (s *Service) appendResolutionEvent(binding WorkspaceBinding, resp MessageAu
 }
 
 func (s *Service) appendEvent(event Event) {
-	if s.events != nil {
-		_ = s.events.AppendEvent(event)
-	}
+	contract.AppendEvent(s.events, event)
 }
 
 func (s *Service) now() time.Time {
-	if s.clock == nil {
-		return time.Now().UTC()
-	}
-	return s.clock.Now()
+	return contract.Now(s.clock)
 }
 
 func (s *Service) id(prefix string) string {
-	if s.newID == nil {
-		return prefix
-	}
-	return s.newID(prefix)
+	return contract.NewID(s.newID, prefix)
 }
 
 func IsConflict(conflict error) func(error) bool {

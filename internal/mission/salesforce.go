@@ -1,0 +1,32 @@
+package mission
+
+import salesforceint "github.com/tauliang/auth-scope/internal/mission/integrations/salesforce"
+
+const (
+	SalesforceOrgBindingStatusActive   = salesforceint.OrgBindingStatusActive
+	SalesforceOrgBindingStatusDisabled = salesforceint.OrgBindingStatusDisabled
+
+	SalesforcePermissionMatchAny = salesforceint.PermissionMatchAny
+	SalesforcePermissionMatchAll = salesforceint.PermissionMatchAll
+
+	SalesforceResolutionStatusAccepted = salesforceint.ResolutionStatusAccepted
+	SalesforceResolutionStatusDenied   = salesforceint.ResolutionStatusDenied
+
+	SalesforceActionReadRecord   = salesforceint.ActionReadRecord
+	SalesforceActionCreateRecord = salesforceint.ActionCreateRecord
+	SalesforceActionUpdateRecord = salesforceint.ActionUpdateRecord
+	SalesforceActionDeleteRecord = salesforceint.ActionDeleteRecord
+	SalesforceActionUpsertRecord = salesforceint.ActionUpsertRecord
+	SalesforceActionSubmitRecord = salesforceint.ActionSubmitRecord
+)
+
+type SalesforcePrincipal = salesforceint.Principal
+type SalesforceActor = salesforceint.Actor
+type SalesforceOrgBinding = salesforceint.OrgBinding
+type CreateSalesforceOrgBindingRequest = salesforceint.CreateOrgBindingRequest
+type SalesforceEvaluationActionResource = salesforceint.EvaluationActionResource
+type SalesforceEvaluationAction = salesforceint.EvaluationAction
+type SalesforceEvaluationRequest = salesforceint.EvaluationRequest
+type SalesforceEvaluationResponse = salesforceint.EvaluationResponse
+type AuthorizeSalesforceRecordActionRequest = salesforceint.AuthorizeRecordActionRequest
+type SalesforceRecordActionAuthorizationResponse = salesforceint.RecordActionAuthorizationResponse

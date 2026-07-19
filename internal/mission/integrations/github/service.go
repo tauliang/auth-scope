@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tauliang/auth-scope/internal/mission/integrations/contract"
 )
 
-type Clock interface {
-	Now() time.Time
-}
+type Clock = contract.Clock
 
 type Store interface {
 	SaveRepositoryBinding(RepositoryBinding) error
@@ -21,55 +21,14 @@ type Store interface {
 	GetWebhookDelivery(string) (WebhookDelivery, error)
 }
 
-type Evaluator interface {
-	Evaluate(EvaluationRequest) (EvaluationResponse, error)
-}
+type Evaluator = contract.Evaluator
 
-type EventSink interface {
-	AppendEvent(Event) error
-}
-
-type EvaluationActionResource struct {
-	Type string
-	ID   string
-}
-
-type EvaluationAction struct {
-	Type      string
-	Name      string
-	Resource  EvaluationActionResource
-	Operation string
-}
-
-type EvaluationRequest struct {
-	MissionRef         string
-	MissionVersionSeen int
-	Actor              Actor
-	Action             EvaluationAction
-	Context            map[string]any
-}
-
-type EvaluationResponse struct {
-	Decision         string
-	MissionRef       string
-	MissionVersion   int
-	ReasonCodes      []string
-	HumanReason      string
-	DecisionArtifact string
-	Constraints      map[string]any
-}
-
-type Event struct {
-	EventID       string
-	MissionRef    string
-	TenantID      string
-	Type          string
-	Actor         map[string]any
-	Payload       map[string]any
-	VersionBefore int
-	VersionAfter  int
-	OccurredAt    time.Time
-}
+type EventSink = contract.EventSink
+type EvaluationActionResource = contract.EvaluationActionResource
+type EvaluationAction = contract.EvaluationAction
+type EvaluationRequest = contract.EvaluationRequest
+type EvaluationResponse = contract.EvaluationResponse
+type Event = contract.Event
 
 type Config struct {
 	Store         Store
@@ -374,23 +333,15 @@ func (s *Service) bindingForRepository(repository string) (RepositoryBinding, bo
 }
 
 func (s *Service) appendEvent(event Event) {
-	if s.events != nil {
-		_ = s.events.AppendEvent(event)
-	}
+	contract.AppendEvent(s.events, event)
 }
 
 func (s *Service) now() time.Time {
-	if s.clock == nil {
-		return time.Now().UTC()
-	}
-	return s.clock.Now()
+	return contract.Now(s.clock)
 }
 
 func (s *Service) id(prefix string) string {
-	if s.newID == nil {
-		return prefix
-	}
-	return s.newID(prefix)
+	return contract.NewID(s.newID, prefix)
 }
 
 func IsConflict(conflict error) func(error) bool {

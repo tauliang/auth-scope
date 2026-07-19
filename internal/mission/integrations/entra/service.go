@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tauliang/auth-scope/internal/mission/integrations/contract"
 )
 
-type Clock interface {
-	Now() time.Time
-}
+type Clock = contract.Clock
 
 type Store interface {
 	SaveAppRegistration(AppRegistration) error
@@ -18,13 +18,9 @@ type Store interface {
 	ListAppRegistrations() ([]AppRegistration, error)
 }
 
-type Evaluator interface {
-	Evaluate(string, EvaluationRequest, map[string]any) (EvaluationResponse, error)
-}
+type Evaluator = contract.Evaluator
 
-type EventSink interface {
-	AppendEvent(Event) error
-}
+type EventSink = contract.EventSink
 
 type Config struct {
 	Store      Store
@@ -221,7 +217,10 @@ func (s *Service) ResolveAuthorityContext(req ResolveAuthorityContextRequest) (A
 		if s.evaluator == nil {
 			return AuthorityContextResponse{}, fmt.Errorf("entra evaluator is not configured")
 		}
-		decision, err := s.evaluator.Evaluate(registration.MissionRef, *req.Evaluation, context)
+		evalReq := *req.Evaluation
+		evalReq.MissionRef = registration.MissionRef
+		evalReq.Context = context
+		decision, err := s.evaluator.Evaluate(evalReq)
 		if err != nil {
 			return AuthorityContextResponse{}, err
 		}
@@ -296,23 +295,15 @@ func (s *Service) appendResolutionEvent(registration AppRegistration, resp Autho
 }
 
 func (s *Service) appendEvent(event Event) {
-	if s.events != nil {
-		_ = s.events.AppendEvent(event)
-	}
+	contract.AppendEvent(s.events, event)
 }
 
 func (s *Service) now() time.Time {
-	if s.clock == nil {
-		return time.Now().UTC()
-	}
-	return s.clock.Now()
+	return contract.Now(s.clock)
 }
 
 func (s *Service) id(prefix string) string {
-	if s.newID == nil {
-		return prefix
-	}
-	return s.newID(prefix)
+	return contract.NewID(s.newID, prefix)
 }
 
 func IsConflict(conflict error) func(error) bool {

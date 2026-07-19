@@ -730,6 +730,114 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SlackMessageAuthorizationResponse" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/atlassian/site-bindings:
+    post:
+      operationId: createAtlassianSiteBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAtlassianSiteBindingRequest" }
+      responses:
+        "201":
+          description: Atlassian site binding for Jira and Confluence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AtlassianSiteBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listAtlassianSiteBindings
+      responses:
+        "200":
+          description: Atlassian site bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  site_bindings:
+                    type: array
+                    items: { $ref: "#/components/schemas/AtlassianSiteBinding" }
+                required: [site_bindings]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/atlassian/jira/issues/authorize:
+    post:
+      operationId: authorizeAtlassianJiraIssueAction
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorizeAtlassianJiraIssueActionRequest" }
+      responses:
+        "200":
+          description: Jira issue authorization response with optional mission evaluation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AtlassianActionAuthorizationResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/atlassian/confluence/pages/authorize:
+    post:
+      operationId: authorizeAtlassianConfluencePageAction
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorizeAtlassianConfluencePageActionRequest" }
+      responses:
+        "200":
+          description: Confluence page authorization response with optional mission evaluation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AtlassianActionAuthorizationResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/salesforce/org-bindings:
+    post:
+      operationId: createSalesforceOrgBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSalesforceOrgBindingRequest" }
+      responses:
+        "201":
+          description: Salesforce org binding for record action authorization.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesforceOrgBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listSalesforceOrgBindings
+      responses:
+        "200":
+          description: Salesforce org bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  org_bindings:
+                    type: array
+                    items: { $ref: "#/components/schemas/SalesforceOrgBinding" }
+                required: [org_bindings]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/salesforce/records/authorize:
+    post:
+      operationId: authorizeSalesforceRecordAction
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorizeSalesforceRecordActionRequest" }
+      responses:
+        "200":
+          description: Salesforce record authorization response with optional mission evaluation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesforceRecordActionAuthorizationResponse" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/events:
     get:
       operationId: listEvents
@@ -1443,6 +1551,291 @@ components:
         email: { type: string }
         roles: { type: array, items: { type: string } }
         channel_id: { type: string }
+        action: { type: string }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, admin]
+    CreateAtlassianSiteBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        site_url: { type: string, description: "Atlassian Cloud site URL, for example https://example.atlassian.net." }
+        cloud_id: { type: string }
+        site_name: { type: string }
+        mission_ref: { type: string }
+        jira_project_keys: { type: array, items: { type: string } }
+        confluence_space_keys: { type: array, items: { type: string } }
+        allowed_jira_actions:
+          type: array
+          items:
+            type: string
+            enum: [view_issue, create_issue, update_issue, transition_issue, comment_issue]
+        allowed_page_actions:
+          type: array
+          items:
+            type: string
+            enum: [view_page, create_page, update_page, comment_page]
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        email_claim: { type: string }
+        group_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [site_url, mission_ref]
+    AtlassianSiteBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        site_url: { type: string }
+        cloud_id: { type: string }
+        site_name: { type: string }
+        mission_ref: { type: string }
+        jira_project_keys: { type: array, items: { type: string } }
+        confluence_space_keys: { type: array, items: { type: string } }
+        allowed_jira_actions: { type: array, items: { type: string } }
+        allowed_page_actions: { type: array, items: { type: string } }
+        required_groups: { type: array, items: { type: string } }
+        admin_groups: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        group_claim: { type: string }
+        subject_claim: { type: string }
+        email_claim: { type: string }
+        group_match_mode: { type: string }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: { type: string } }
+        created_by: { $ref: "#/components/schemas/Principal" }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_subject: { type: string }
+        last_resolution_status: { type: string }
+      required: [binding_id, site_url, mission_ref, status, created_at]
+    AtlassianEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action:
+          type: object
+          additionalProperties: true
+          properties:
+            type: { type: string }
+            name: { type: string }
+            resource:
+              type: object
+              properties:
+                type: { type: string }
+                id: { type: string }
+                channel_id: { type: string }
+              required: [type, id]
+            operation: { type: string }
+      required: [actor, action]
+    AuthorizeAtlassianJiraIssueActionRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        site_url: { type: string }
+        cloud_id: { type: string }
+        project_key: { type: string }
+        issue_key: { type: string }
+        issue_type: { type: string }
+        account_id: { type: string }
+        subject: { type: string }
+        email: { type: string }
+        groups: { type: array, items: { type: string } }
+        action:
+          type: string
+          enum: [view_issue, create_issue, update_issue, transition_issue, comment_issue]
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/AtlassianEvaluationRequest" }
+      required: [action]
+    AuthorizeAtlassianConfluencePageActionRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        site_url: { type: string }
+        cloud_id: { type: string }
+        space_key: { type: string }
+        page_id: { type: string }
+        page_title: { type: string }
+        account_id: { type: string }
+        subject: { type: string }
+        email: { type: string }
+        groups: { type: array, items: { type: string } }
+        action:
+          type: string
+          enum: [view_page, create_page, update_page, comment_page]
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/AtlassianEvaluationRequest" }
+      required: [space_key, action]
+    AtlassianActionAuthorizationResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        product: { type: string, enum: [jira, confluence] }
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        site_url: { type: string }
+        cloud_id: { type: string }
+        project_key: { type: string }
+        issue_key: { type: string }
+        issue_type: { type: string }
+        space_key: { type: string }
+        page_id: { type: string }
+        page_title: { type: string }
+        account_id: { type: string }
+        subject: { type: string }
+        email: { type: string }
+        groups: { type: array, items: { type: string } }
+        action: { type: string }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, product, admin]
+    CreateSalesforceOrgBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        instance_url: { type: string, description: "Salesforce instance URL, for example https://example.my.salesforce.com." }
+        org_id: { type: string }
+        org_name: { type: string }
+        mission_ref: { type: string }
+        allowed_object_api_names: { type: array, items: { type: string } }
+        allowed_record_type_ids: { type: array, items: { type: string } }
+        allowed_record_type_names: { type: array, items: { type: string } }
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum: [read_record, create_record, update_record, delete_record, upsert_record, submit_record]
+        required_profiles: { type: array, items: { type: string } }
+        required_permission_sets: { type: array, items: { type: string } }
+        admin_profiles: { type: array, items: { type: string } }
+        admin_permission_sets: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        profile_claim: { type: string }
+        permission_sets_claim: { type: string }
+        subject_claim: { type: string }
+        username_claim: { type: string }
+        email_claim: { type: string }
+        permission_set_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [instance_url, mission_ref]
+    SalesforceOrgBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        instance_url: { type: string }
+        org_id: { type: string }
+        org_name: { type: string }
+        mission_ref: { type: string }
+        allowed_object_api_names: { type: array, items: { type: string } }
+        allowed_record_type_ids: { type: array, items: { type: string } }
+        allowed_record_type_names: { type: array, items: { type: string } }
+        allowed_actions: { type: array, items: { type: string } }
+        required_profiles: { type: array, items: { type: string } }
+        required_permission_sets: { type: array, items: { type: string } }
+        admin_profiles: { type: array, items: { type: string } }
+        admin_permission_sets: { type: array, items: { type: string } }
+        allowed_subjects: { type: array, items: { type: string } }
+        profile_claim: { type: string }
+        permission_sets_claim: { type: string }
+        subject_claim: { type: string }
+        username_claim: { type: string }
+        email_claim: { type: string }
+        permission_set_match_mode: { type: string }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: { type: string } }
+        created_by: { $ref: "#/components/schemas/Principal" }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_subject: { type: string }
+        last_resolution_status: { type: string }
+      required: [binding_id, instance_url, mission_ref, status, created_at]
+    SalesforceEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action:
+          type: object
+          additionalProperties: true
+          properties:
+            type: { type: string }
+            name: { type: string }
+            resource:
+              type: object
+              properties:
+                type: { type: string }
+                id: { type: string }
+                channel_id: { type: string }
+              required: [type, id]
+            operation: { type: string }
+      required: [actor, action]
+    AuthorizeSalesforceRecordActionRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        instance_url: { type: string }
+        org_id: { type: string }
+        object_api_name: { type: string }
+        record_id: { type: string }
+        record_type_id: { type: string }
+        record_type_name: { type: string }
+        user_id: { type: string }
+        subject: { type: string }
+        username: { type: string }
+        email: { type: string }
+        profile: { type: string }
+        permission_sets: { type: array, items: { type: string } }
+        action:
+          type: string
+          enum: [read_record, create_record, update_record, delete_record, upsert_record, submit_record]
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/SalesforceEvaluationRequest" }
+      required: [object_api_name, action]
+    SalesforceRecordActionAuthorizationResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        instance_url: { type: string }
+        org_id: { type: string }
+        object_api_name: { type: string }
+        record_id: { type: string }
+        record_type_id: { type: string }
+        record_type_name: { type: string }
+        user_id: { type: string }
+        subject: { type: string }
+        username: { type: string }
+        email: { type: string }
+        profile: { type: string }
+        permission_sets: { type: array, items: { type: string } }
         action: { type: string }
         admin: { type: boolean }
         reason_codes: { type: array, items: { type: string } }

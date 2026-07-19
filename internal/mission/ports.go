@@ -80,6 +80,13 @@ type OktaStore interface {
 	ListOktaAppBindings() ([]OktaAppBinding, error)
 }
 
+type EntraStore interface {
+	SaveEntraAppRegistration(EntraAppRegistration) error
+	GetEntraAppRegistration(string) (EntraAppRegistration, error)
+	UpdateEntraAppRegistration(EntraAppRegistration) error
+	ListEntraAppRegistrations() ([]EntraAppRegistration, error)
+}
+
 type ExpansionDecisionStore interface {
 	CommitExpansionDecision(context.Context, ExpansionDecisionCommit) error
 }

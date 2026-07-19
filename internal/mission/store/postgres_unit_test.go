@@ -1101,6 +1101,78 @@ func TestPostgresStoreOktaIntegrationMethods(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreEntraIntegrationMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	registration := sampleEntraAppRegistration()
+	registrationJSON := mustJSON(t, registration)
+	mock.ExpectExec("INSERT INTO entra_app_registrations").
+		WithArgs(
+			registration.RegistrationID,
+			nullableString(registration.TenantID),
+			registration.Issuer,
+			registration.ClientID,
+			registration.MissionRef,
+			registration.Status,
+			registrationJSON,
+			registration.CreatedAt,
+			nullableTime(registration.LastResolvedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveEntraAppRegistration(registration); err != nil {
+		t.Fatalf("SaveEntraAppRegistration: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO entra_app_registrations").
+		WithArgs(
+			registration.RegistrationID,
+			nullableString(registration.TenantID),
+			registration.Issuer,
+			registration.ClientID,
+			registration.MissionRef,
+			registration.Status,
+			registrationJSON,
+			registration.CreatedAt,
+			nullableTime(registration.LastResolvedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveEntraAppRegistration(registration); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveEntraAppRegistration duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT registration_json FROM entra_app_registrations").
+		WithArgs(registration.RegistrationID).
+		WillReturnRows(sqlmock.NewRows([]string{"registration_json"}).AddRow(registrationJSON))
+	gotRegistration, err := store.GetEntraAppRegistration(registration.RegistrationID)
+	if err != nil {
+		t.Fatalf("GetEntraAppRegistration: %v", err)
+	}
+	if gotRegistration.RegistrationID != registration.RegistrationID {
+		t.Fatalf("GetEntraAppRegistration = %#v", gotRegistration)
+	}
+
+	registration.LastResolvedAt = testUnitNow()
+	registration.LastSubject = "user@example.onmicrosoft.com"
+	registration.LastResolutionStatus = mission.EntraResolutionStatusAccepted
+	updatedRegistrationJSON := mustJSON(t, registration)
+	mock.ExpectExec("UPDATE entra_app_registrations").
+		WithArgs(nullableString(registration.TenantID), registration.Issuer, registration.ClientID, registration.MissionRef, registration.Status, updatedRegistrationJSON, nullableTime(registration.LastResolvedAt), registration.RegistrationID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateEntraAppRegistration(registration); err != nil {
+		t.Fatalf("UpdateEntraAppRegistration: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT registration_json").
+		WillReturnRows(sqlmock.NewRows([]string{"registration_json"}).AddRow(updatedRegistrationJSON))
+	registrations, err := store.ListEntraAppRegistrations()
+	if err != nil {
+		t.Fatalf("ListEntraAppRegistrations: %v", err)
+	}
+	if len(registrations) != 1 || registrations[0].ClientID != registration.ClientID {
+		t.Fatalf("ListEntraAppRegistrations = %#v", registrations)
+	}
+}
+
 func TestPostgresStoreListMethods(t *testing.T) {
 	store, mock, cleanup := newMockPostgresStore(t)
 	defer cleanup()
@@ -1473,6 +1545,30 @@ func sampleOktaAppBinding() mission.OktaAppBinding {
 		Status:                mission.OktaAppBindingStatusActive,
 		CreatedBy:             mission.OktaPrincipal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
 		CreatedAt:             testUnitNow(),
+	}
+}
+
+func sampleEntraAppRegistration() mission.EntraAppRegistration {
+	return mission.EntraAppRegistration{
+		RegistrationID: "enr_test",
+		TenantID:       "tenant_1",
+		TenantName:     "Contoso",
+		Issuer:         "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0",
+		DiscoveryURL:   "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/v2.0/.well-known/openid-configuration",
+		JWKSURI:        "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789012/discovery/v2.0/keys",
+		ClientID:       "00000000-0000-0000-0000-000000000000",
+		AppID:          "app_entra_001",
+		AppName:        "Auth Scope Console",
+		MissionRef:     "mref_test",
+		RequiredGroups: []string{"Mission Operators"},
+		AdminGroups:    []string{"Mission Admins"},
+		GroupClaim:     "groups",
+		SubjectClaim:   "sub",
+		RolesClaim:     "roles",
+		GroupMatchMode: mission.EntraGroupMatchAny,
+		Status:         mission.EntraAppRegistrationStatusActive,
+		CreatedBy:      mission.EntraPrincipal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
+		CreatedAt:      testUnitNow(),
 	}
 }
 

@@ -2,6 +2,7 @@ package mission
 
 import (
 	"fmt"
+	"path"
 	"reflect"
 	"slices"
 	"strconv"
@@ -65,14 +66,31 @@ func authoritySubset(parent, child AuthorityRegion) bool {
 
 func resourceMatches(grant ResourceGrant, resource ActionResource) bool {
 	typeMatches := grant.Type == "*" || grant.Type == "" || grant.Type == resource.Type
-	idMatches := grant.ID == "*" || grant.ID == "" || grant.ID == resource.ID
+	idMatches := resourceIDMatches(grant.ID, resource.ID)
 	return typeMatches && idMatches
 }
 
 func grantsResource(parent, child ResourceGrant) bool {
 	typeMatches := parent.Type == "*" || parent.Type == "" || parent.Type == child.Type
-	idMatches := parent.ID == "*" || parent.ID == "" || parent.ID == child.ID
+	idMatches := resourceIDMatches(parent.ID, child.ID)
 	return typeMatches && idMatches
+}
+
+func resourceIDMatches(pattern string, id string) bool {
+	pattern = strings.TrimSpace(pattern)
+	id = strings.TrimSpace(id)
+	if pattern == "*" || pattern == "" || pattern == id {
+		return true
+	}
+	if strings.HasSuffix(pattern, "/**") {
+		prefix := strings.TrimSuffix(pattern, "/**")
+		return id == prefix || strings.HasPrefix(id, prefix+"/")
+	}
+	if strings.ContainsAny(pattern, "*?[") {
+		matched, err := path.Match(pattern, id)
+		return err == nil && matched
+	}
+	return false
 }
 
 func actionsSubset(parent, child []string) bool {

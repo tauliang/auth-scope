@@ -40,6 +40,7 @@ func NewHandlerWithOptions(service *Service, authenticator AdminAuthenticator, o
 		GrandGovernance: service,
 		AuthZEN:         service,
 		Operator:        service,
+		GitHub:          service,
 	}, authenticator, options)
 }
 
@@ -104,6 +105,10 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("GET /v1/containment-rules/{rule_id}", h.requireAdmin(http.HandlerFunc(h.getContainmentRule)))
 	mux.Handle("POST /v1/containment-rules/{rule_id}/lift", h.requireAdmin(http.HandlerFunc(h.liftContainmentRule)))
 	mux.Handle("GET /v1/containment-rules/{rule_id}/blast-radius", h.requireAdmin(http.HandlerFunc(h.containmentBlastRadius)))
+	mux.Handle("POST /v1/integrations/github/repositories", h.requireAdmin(http.HandlerFunc(h.createGitHubRepositoryBinding)))
+	mux.Handle("GET /v1/integrations/github/repositories", h.requireAdmin(http.HandlerFunc(h.listGitHubRepositoryBindings)))
+	mux.HandleFunc("POST /v1/integrations/github/webhooks", h.githubWebhook)
+	mux.HandleFunc("POST /v1/integrations/github/check-runs/plan", h.githubCheckRunPlan)
 	mux.Handle("GET /v1/events", h.requireAdmin(http.HandlerFunc(h.events)))
 	mux.Handle("GET /v1/events/stream", h.requireAdmin(http.HandlerFunc(h.eventsStream)))
 	return requestID(mux)
@@ -177,6 +182,7 @@ func (h *Handler) discovery(w http.ResponseWriter, r *http.Request) {
 			"authority_negotiation":     true,
 			"containment_rules":         true,
 			"lineage_graphs":            true,
+			"github_integration":        true,
 			"mission_proposals":         true,
 			"delegation":                true,
 			"expansion_requests":        true,

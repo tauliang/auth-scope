@@ -612,6 +612,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/integrations/github/repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listGitHubRepositoryBindings"];
+        put?: never;
+        post: operations["createGitHubRepositoryBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/github/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ingestGitHubWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/github/check-runs/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["planGitHubCheckRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -860,6 +908,83 @@ export interface components {
             [key: string]: unknown;
         };
         ContainmentRule: {
+            [key: string]: unknown;
+        };
+        CreateGitHubRepositoryBindingRequest: {
+            tenant_id?: string;
+            owner?: string;
+            repo?: string;
+            /** @description Repository in owner/repo form. */
+            repository?: string;
+            default_branch?: string;
+            /** Format: int64 */
+            installation_id?: number;
+            mission_ref?: string;
+            branch_patterns?: string[];
+            required_checks?: string[];
+            metadata?: {
+                [key: string]: string;
+            };
+        };
+        GitHubRepositoryBinding: {
+            binding_id: string;
+            tenant_id?: string;
+            repository: string;
+            mission_ref?: string;
+            status: string;
+            /** Format: date-time */
+            created_at: string;
+        } & {
+            [key: string]: unknown;
+        };
+        GitHubWebhookResponse: {
+            accepted: boolean;
+            status: string;
+            event: string;
+            delivery_id: string;
+            repository?: string;
+            binding_id?: string;
+            mission_ref?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        GitHubChangedFile: {
+            path: string;
+            status?: string;
+            operation?: string;
+            additions?: number;
+            deletions?: number;
+        };
+        GitHubCheckRunPlanRequest: {
+            mission_ref?: string;
+            mission_version_seen?: number;
+            actor: {
+                [key: string]: unknown;
+            };
+            repository: string;
+            pull_request?: number;
+            head_sha: string;
+            branch?: string;
+            changed_files: components["schemas"]["GitHubChangedFile"][];
+            context?: {
+                [key: string]: unknown;
+            };
+        };
+        GitHubCheckRunPlanResponse: {
+            name: string;
+            external_id: string;
+            repository: string;
+            head_sha: string;
+            status: string;
+            conclusion: string;
+            title: string;
+            summary: string;
+            mission_ref: string;
+            mission_version?: number;
+            evaluations: {
+                [key: string]: unknown;
+            }[];
+        } & {
             [key: string]: unknown;
         };
         AdminSession: {
@@ -1903,6 +2028,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listGitHubRepositoryBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description GitHub repository bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        repositories: components["schemas"]["GitHubRepositoryBinding"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createGitHubRepositoryBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateGitHubRepositoryBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description GitHub repository binding. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubRepositoryBinding"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    ingestGitHubWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-GitHub-Event": string;
+                "X-GitHub-Delivery": string;
+                "X-Hub-Signature-256": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: components["requestBodies"]["GenericJSON"];
+        responses: {
+            /** @description Accepted GitHub webhook delivery. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubWebhookResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    planGitHubCheckRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitHubCheckRunPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description GitHub check-run payload that an integration worker can publish. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubCheckRunPlanResponse"];
                 };
             };
             default: components["responses"]["Error"];

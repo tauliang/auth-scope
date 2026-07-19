@@ -521,6 +521,77 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/GenericObject" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/github/repositories:
+    post:
+      operationId: createGitHubRepositoryBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGitHubRepositoryBindingRequest" }
+      responses:
+        "201":
+          description: GitHub repository binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubRepositoryBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listGitHubRepositoryBindings
+      responses:
+        "200":
+          description: GitHub repository bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  repositories:
+                    type: array
+                    items: { $ref: "#/components/schemas/GitHubRepositoryBinding" }
+                required: [repositories]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/github/webhooks:
+    post:
+      operationId: ingestGitHubWebhook
+      security: []
+      parameters:
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-GitHub-Delivery
+          in: header
+          required: true
+          schema: { type: string }
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "202":
+          description: Accepted GitHub webhook delivery.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubWebhookResponse" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/github/check-runs/plan:
+    post:
+      operationId: planGitHubCheckRun
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GitHubCheckRunPlanRequest" }
+      responses:
+        "200":
+          description: GitHub check-run payload that an integration worker can publish.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GitHubCheckRunPlanResponse" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/events:
     get:
       operationId: listEvents
@@ -847,6 +918,84 @@ components:
     ContainmentRule:
       type: object
       additionalProperties: true
+    CreateGitHubRepositoryBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        owner: { type: string }
+        repo: { type: string }
+        repository: { type: string, description: "Repository in owner/repo form." }
+        default_branch: { type: string }
+        installation_id: { type: integer, format: int64 }
+        mission_ref: { type: string }
+        branch_patterns: { type: array, items: { type: string } }
+        required_checks: { type: array, items: { type: string } }
+        metadata: { type: object, additionalProperties: { type: string } }
+    GitHubRepositoryBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        repository: { type: string }
+        mission_ref: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [binding_id, repository, status, created_at]
+    GitHubWebhookResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        event: { type: string }
+        delivery_id: { type: string }
+        repository: { type: string }
+        binding_id: { type: string }
+        mission_ref: { type: string }
+      required: [accepted, status, event, delivery_id]
+    GitHubChangedFile:
+      type: object
+      properties:
+        path: { type: string }
+        status: { type: string }
+        operation: { type: string }
+        additions: { type: integer }
+        deletions: { type: integer }
+      required: [path]
+    GitHubCheckRunPlanRequest:
+      type: object
+      properties:
+        mission_ref: { type: string }
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        repository: { type: string }
+        pull_request: { type: integer }
+        head_sha: { type: string }
+        branch: { type: string }
+        changed_files:
+          type: array
+          items: { $ref: "#/components/schemas/GitHubChangedFile" }
+        context: { type: object, additionalProperties: true }
+      required: [actor, repository, head_sha, changed_files]
+    GitHubCheckRunPlanResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        name: { type: string }
+        external_id: { type: string }
+        repository: { type: string }
+        head_sha: { type: string }
+        status: { type: string }
+        conclusion: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        mission_ref: { type: string }
+        mission_version: { type: integer }
+        evaluations:
+          type: array
+          items: { type: object, additionalProperties: true }
+      required: [name, external_id, repository, head_sha, status, conclusion, title, summary, mission_ref, evaluations]
     AdminSession:
       type: object
       properties:

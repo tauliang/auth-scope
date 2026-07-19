@@ -76,6 +76,13 @@ type OperatorAPI interface {
 	ListEvents(ListQuery) (CollectionPage[Event], error)
 }
 
+type GitHubAPI interface {
+	CreateGitHubRepositoryBinding(CreateGitHubRepositoryBindingRequest, Principal) (GitHubRepositoryBinding, error)
+	ListGitHubRepositoryBindings() ([]GitHubRepositoryBinding, error)
+	IngestGitHubWebhook(IngestGitHubWebhookRequest) (GitHubWebhookResponse, error)
+	PlanGitHubCheckRun(GitHubCheckRunPlanRequest) (GitHubCheckRunPlanResponse, error)
+}
+
 type HandlerServices struct {
 	Identity        IdentityAPI
 	Mission         MissionAPI
@@ -84,4 +91,5 @@ type HandlerServices struct {
 	GrandGovernance GrandGovernanceAPI
 	AuthZEN         AuthZENAPI
 	Operator        OperatorAPI
+	GitHub          GitHubAPI
 }

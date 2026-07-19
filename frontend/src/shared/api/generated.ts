@@ -724,6 +724,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/integrations/slack/workspace-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSlackWorkspaceBindings"];
+        put?: never;
+        post: operations["createSlackWorkspaceBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/slack/message-actions/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["authorizeSlackMessageAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -1250,6 +1282,121 @@ export interface components {
             subject?: string;
             groups?: string[];
             roles?: string[];
+            admin: boolean;
+            reason_codes?: string[];
+            human_reason?: string;
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: {
+                [key: string]: unknown;
+            };
+            resolved_at?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SlackPrincipal: {
+            user_id?: string;
+            email?: string;
+        };
+        CreateSlackWorkspaceBindingRequest: {
+            tenant_id?: string;
+            workspace_id: string;
+            workspace_name?: string;
+            workspace_url?: string;
+            mission_ref: string;
+            required_roles?: string[];
+            admin_roles?: string[];
+            allowed_channels?: string[];
+            blocked_channels?: string[];
+            allowed_users?: string[];
+            allowed_actions?: ("post_message" | "edit_message" | "delete_message" | "react_message" | "start_thread")[];
+            role_claim?: string;
+            /** @enum {string} */
+            role_match_mode?: "any" | "all";
+            metadata?: {
+                [key: string]: string;
+            };
+        };
+        SlackWorkspaceBinding: {
+            binding_id: string;
+            tenant_id?: string;
+            workspace_id: string;
+            workspace_name?: string;
+            workspace_url?: string;
+            mission_ref: string;
+            required_roles?: string[];
+            admin_roles?: string[];
+            allowed_channels?: string[];
+            blocked_channels?: string[];
+            allowed_users?: string[];
+            allowed_actions?: ("post_message" | "edit_message" | "delete_message" | "react_message" | "start_thread")[];
+            role_claim?: string;
+            role_match_mode?: string;
+            status: string;
+            metadata?: {
+                [key: string]: string;
+            };
+            created_by?: components["schemas"]["SlackPrincipal"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_resolved_at?: string;
+            last_user_id?: string;
+            last_resolution_status?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SlackActionResource: {
+            type: string;
+            id: string;
+            channel_id?: string;
+        };
+        SlackMessageAction: {
+            type: string;
+            name?: string;
+            resource: components["schemas"]["SlackActionResource"];
+            operation: string;
+        } & {
+            [key: string]: unknown;
+        };
+        SlackEvaluationRequest: {
+            mission_version_seen?: number;
+            actor: {
+                [key: string]: unknown;
+            };
+            action: components["schemas"]["SlackMessageAction"];
+        };
+        AuthorizeSlackMessageActionRequest: {
+            tenant_id?: string;
+            mission_ref?: string;
+            workspace_id: string;
+            user_id?: string;
+            email?: string;
+            roles?: string[];
+            channel_id?: string;
+            /** @enum {string} */
+            action: "post_message" | "edit_message" | "delete_message" | "react_message" | "start_thread";
+            claims?: {
+                [key: string]: unknown;
+            };
+            context?: {
+                [key: string]: unknown;
+            };
+            evaluation?: components["schemas"]["SlackEvaluationRequest"];
+        };
+        SlackMessageAuthorizationResponse: {
+            accepted: boolean;
+            status: string;
+            binding_id?: string;
+            tenant_id?: string;
+            mission_ref?: string;
+            workspace_id?: string;
+            user_id?: string;
+            email?: string;
+            roles?: string[];
+            channel_id?: string;
+            action?: string;
             admin: boolean;
             reason_codes?: string[];
             human_reason?: string;
@@ -2548,6 +2695,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EntraAuthorityContextResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listSlackWorkspaceBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack workspace bindings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        workspace_bindings: components["schemas"]["SlackWorkspaceBinding"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createSlackWorkspaceBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSlackWorkspaceBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description Slack workspace binding. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackWorkspaceBinding"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    authorizeSlackMessageAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizeSlackMessageActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Slack message authorization response with optional mission evaluation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackMessageAuthorizationResponse"];
                 };
             };
             default: components["responses"]["Error"];

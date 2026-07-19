@@ -1173,6 +1173,76 @@ func TestPostgresStoreEntraIntegrationMethods(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreSlackIntegrationMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	binding := sampleSlackWorkspaceBinding()
+	bindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("INSERT INTO slack_workspace_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.WorkspaceID,
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SaveSlackWorkspaceBinding(binding); err != nil {
+		t.Fatalf("SaveSlackWorkspaceBinding: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO slack_workspace_bindings").
+		WithArgs(
+			binding.BindingID,
+			nullableString(binding.TenantID),
+			binding.WorkspaceID,
+			binding.MissionRef,
+			binding.Status,
+			bindingJSON,
+			binding.CreatedAt,
+			nullableTime(binding.LastResolvedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SaveSlackWorkspaceBinding(binding); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SaveSlackWorkspaceBinding duplicate err = %v, want ErrConflict", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json FROM slack_workspace_bindings").
+		WithArgs(binding.BindingID).
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(bindingJSON))
+	gotBinding, err := store.GetSlackWorkspaceBinding(binding.BindingID)
+	if err != nil {
+		t.Fatalf("GetSlackWorkspaceBinding: %v", err)
+	}
+	if gotBinding.BindingID != binding.BindingID {
+		t.Fatalf("GetSlackWorkspaceBinding = %#v", gotBinding)
+	}
+
+	binding.LastResolvedAt = testUnitNow()
+	binding.LastUserID = "U12345678"
+	binding.LastResolutionStatus = mission.SlackResolutionStatusAccepted
+	updatedBindingJSON := mustJSON(t, binding)
+	mock.ExpectExec("UPDATE slack_workspace_bindings").
+		WithArgs(nullableString(binding.TenantID), binding.WorkspaceID, binding.MissionRef, binding.Status, updatedBindingJSON, nullableTime(binding.LastResolvedAt), binding.BindingID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.UpdateSlackWorkspaceBinding(binding); err != nil {
+		t.Fatalf("UpdateSlackWorkspaceBinding: %v", err)
+	}
+
+	mock.ExpectQuery("SELECT binding_json").
+		WillReturnRows(sqlmock.NewRows([]string{"binding_json"}).AddRow(updatedBindingJSON))
+	bindings, err := store.ListSlackWorkspaceBindings()
+	if err != nil {
+		t.Fatalf("ListSlackWorkspaceBindings: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].WorkspaceID != binding.WorkspaceID {
+		t.Fatalf("ListSlackWorkspaceBindings = %#v", bindings)
+	}
+}
+
 func TestPostgresStoreListMethods(t *testing.T) {
 	store, mock, cleanup := newMockPostgresStore(t)
 	defer cleanup()
@@ -1569,6 +1639,29 @@ func sampleEntraAppRegistration() mission.EntraAppRegistration {
 		Status:         mission.EntraAppRegistrationStatusActive,
 		CreatedBy:      mission.EntraPrincipal{Subject: "admin@example.com", Issuer: "https://idp.example.com"},
 		CreatedAt:      testUnitNow(),
+	}
+}
+
+func sampleSlackWorkspaceBinding() mission.SlackWorkspaceBinding {
+	return mission.SlackWorkspaceBinding{
+		BindingID:       "slb_test",
+		TenantID:        "tenant_1",
+		WorkspaceID:     "T12345678",
+		WorkspaceName:   "Acme Corp",
+		WorkspaceURL:    "https://acme-corp.slack.com",
+		MissionRef:      "mref_test",
+		RequiredRoles:   []string{"Workspace Admin"},
+		AdminRoles:      []string{"Owner"},
+		AllowedChannels: []string{"C11111111"},
+		BlockedChannels: []string{"C99999999"},
+		AllowedUsers:    []string{"U12345678"},
+		AllowedActions:  []string{mission.SlackActionTypePostMessage},
+		RoleClaim:       "roles",
+		RoleMatchMode:   mission.SlackRoleMatchAny,
+		Status:          mission.SlackWorkspaceBindingStatusActive,
+		Metadata:        map[string]string{"environment": "production"},
+		CreatedBy:       mission.SlackPrincipal{UserID: "admin@example.com"},
+		CreatedAt:       testUnitNow(),
 	}
 }
 

@@ -78,9 +78,9 @@ func (s *Service) CreateWorkspaceBinding(req CreateWorkspaceBindingRequest, acto
 	if roleMatchMode != RoleMatchAny && roleMatchMode != RoleMatchAll {
 		return WorkspaceBinding{}, fmt.Errorf("role_match_mode must be any or all")
 	}
-	rollClaim := strings.TrimSpace(req.RoleClaim)
-	if rollClaim == "" {
-		rollClaim = "roles"
+	roleClaim := strings.TrimSpace(req.RoleClaim)
+	if roleClaim == "" {
+		roleClaim = "roles"
 	}
 
 	now := s.now()
@@ -97,7 +97,7 @@ func (s *Service) CreateWorkspaceBinding(req CreateWorkspaceBindingRequest, acto
 		BlockedChannels: CleanStringList(req.BlockedChannels),
 		AllowedUsers:    CleanStringList(req.AllowedUsers),
 		AllowedActions:  CleanStringList(req.AllowedActions),
-		RoleClaim:       rollClaim,
+		RoleClaim:       roleClaim,
 		RoleMatchMode:   roleMatchMode,
 		Status:          WorkspaceBindingStatusActive,
 		Metadata:        CloneStringMap(req.Metadata),
@@ -114,10 +114,10 @@ func (s *Service) CreateWorkspaceBinding(req CreateWorkspaceBindingRequest, acto
 		Type:       "slack.workspace_bound",
 		Actor:      map[string]any{"user_id": actor.UserID, "email": actor.Email},
 		Payload: map[string]any{
-			"binding_id":    binding.BindingID,
-			"workspace_id":  binding.WorkspaceID,
-			"mission_ref":   binding.MissionRef,
-			"roles_bound":   len(binding.RequiredRoles),
+			"binding_id":   binding.BindingID,
+			"workspace_id": binding.WorkspaceID,
+			"mission_ref":  binding.MissionRef,
+			"roles_bound":  len(binding.RequiredRoles),
 		},
 		OccurredAt: now,
 	})
@@ -133,10 +133,6 @@ func (s *Service) AuthorizeMessageAction(req AuthorizeMessageActionRequest) (Mes
 	if workspaceID == "" {
 		return MessageAuthorizationResponse{}, fmt.Errorf("workspace_id is required")
 	}
-	userID := strings.TrimSpace(req.UserID)
-	if userID == "" {
-		return MessageAuthorizationResponse{}, fmt.Errorf("user_id is required")
-	}
 	action := strings.TrimSpace(req.Action)
 	if action == "" {
 		return MessageAuthorizationResponse{}, fmt.Errorf("action is required")
@@ -147,7 +143,7 @@ func (s *Service) AuthorizeMessageAction(req AuthorizeMessageActionRequest) (Mes
 		return MessageAuthorizationResponse{}, err
 	}
 	if !ok {
-		return s.deniedResponse(WorkspaceBinding{}, workspaceID, userID, req.Email, action, req.ChannelID, []string{"slack_no_matching_binding"}, "No active Slack workspace binding found."), nil
+		return s.deniedResponse(WorkspaceBinding{}, workspaceID, strings.TrimSpace(req.UserID), req.Email, action, req.ChannelID, []string{"slack_no_matching_binding"}, "No active Slack workspace binding found."), nil
 	}
 
 	userID, email, roles, err := ExtractUserContext(req, binding)
@@ -167,7 +163,7 @@ func (s *Service) AuthorizeMessageAction(req AuthorizeMessageActionRequest) (Mes
 	if len(binding.BlockedChannels) > 0 && ContainsString(binding.BlockedChannels, channelID) {
 		reasons = append(reasons, "slack_channel_blocked")
 	}
-	if len(binding.AllowedChannels) > 0 && !ContainsString(binding.AllowedChannels, channelID) && channelID != "" {
+	if len(binding.AllowedChannels) > 0 && !ContainsString(binding.AllowedChannels, channelID) {
 		reasons = append(reasons, "slack_channel_not_allowed")
 	}
 
@@ -207,18 +203,18 @@ func (s *Service) AuthorizeMessageAction(req AuthorizeMessageActionRequest) (Mes
 	context["slack.role_match_mode"] = binding.RoleMatchMode
 
 	resp := MessageAuthorizationResponse{
-		Accepted:     true,
-		Status:       ResolutionStatusAccepted,
-		BindingID:    binding.BindingID,
-		TenantID:     binding.TenantID,
-		MissionRef:   binding.MissionRef,
-		WorkspaceID:  workspaceID,
-		UserID:       userID,
-		Email:        email,
-		Roles:        roles,
-		ChannelID:    channelID,
-		Action:       action,
-		Admin:        admin,
+		Accepted:    true,
+		Status:      ResolutionStatusAccepted,
+		BindingID:   binding.BindingID,
+		TenantID:    binding.TenantID,
+		MissionRef:  binding.MissionRef,
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Email:       email,
+		Roles:       roles,
+		ChannelID:   channelID,
+		Action:      action,
+		Admin:       admin,
 		ReasonCodes: []string{"slack_binding_satisfied"},
 		HumanReason: "User satisfies the active Slack workspace binding requirements.",
 		Context:     context,
@@ -291,15 +287,15 @@ func (s *Service) appendResolutionEvent(binding WorkspaceBinding, resp MessageAu
 		Type:       "slack.message_action_evaluated",
 		Actor:      map[string]any{"user_id": resp.UserID, "email": resp.Email},
 		Payload: map[string]any{
-			"binding_id":    resp.BindingID,
-			"workspace_id":  resp.WorkspaceID,
-			"user_id":       resp.UserID,
-			"action":        resp.Action,
-			"channel_id":    resp.ChannelID,
-			"accepted":      resp.Accepted,
-			"status":        resp.Status,
-			"reason_codes":  resp.ReasonCodes,
-			"admin":         resp.Admin,
+			"binding_id":   resp.BindingID,
+			"workspace_id": resp.WorkspaceID,
+			"user_id":      resp.UserID,
+			"action":       resp.Action,
+			"channel_id":   resp.ChannelID,
+			"accepted":     resp.Accepted,
+			"status":       resp.Status,
+			"reason_codes": resp.ReasonCodes,
+			"admin":        resp.Admin,
 		},
 		OccurredAt: occurredAt,
 	})

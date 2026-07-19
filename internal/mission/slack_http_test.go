@@ -13,12 +13,12 @@ func TestAPISlackIntegrationLifecycle(t *testing.T) {
 
 	createBinding := httptest.NewRecorder()
 	router.ServeHTTP(createBinding, jsonRequest(http.MethodPost, "/v1/integrations/slack/workspace-bindings", CreateSlackWorkspaceBindingRequest{
-		WorkspaceID:   "T12345678",
-		WorkspaceName: "Acme Corp",
-		WorkspaceURL:  "https://acme-corp.slack.com",
-		MissionRef:    mission.MissionRef,
-		RequiredRoles: []string{"Workspace Admin"},
-		AdminRoles:    []string{"Owner"},
+		WorkspaceID:     "T12345678",
+		WorkspaceName:   "Acme Corp",
+		WorkspaceURL:    "https://acme-corp.slack.com",
+		MissionRef:      mission.MissionRef,
+		RequiredRoles:   []string{"Workspace Admin"},
+		AdminRoles:      []string{"Owner"},
 		AllowedChannels: []string{"C11111111"},
 	}))
 	if createBinding.Code != http.StatusCreated {
@@ -46,7 +46,7 @@ func TestAPISlackIntegrationLifecycle(t *testing.T) {
 		Action:      SlackActionTypePostMessage,
 		Evaluation: &SlackEvaluationRequest{
 			MissionVersionSeen: mission.MissionVersion,
-			Actor:              SlackActor{AgentInstanceID: "slack_bot_1", ClientID: "research-agent"},
+			Actor:              SlackActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
 			Action: SlackMessageAction{
 				Type:      "message_event",
 				Resource:  SlackActionResource{Type: "message", ID: "msg_123", ChannelID: "C11111111"},

@@ -41,6 +41,7 @@ type Store interface {
 	GitHubStore
 	OktaStore
 	EntraStore
+	SlackStore
 	ExpansionDecisionStore
 	ProposalApprovalStore
 	EventStore
@@ -67,6 +68,7 @@ type MemoryStore struct {
 	githubDeliveries   map[string]GitHubWebhookDelivery
 	oktaBindings       map[string]OktaAppBinding
 	entraRegistrations map[string]EntraAppRegistration
+	slackBindings      map[string]SlackWorkspaceBinding
 	events             []Event
 }
 
@@ -89,6 +91,7 @@ func NewMemoryStore() *MemoryStore {
 		githubDeliveries:   make(map[string]GitHubWebhookDelivery),
 		oktaBindings:       make(map[string]OktaAppBinding),
 		entraRegistrations: make(map[string]EntraAppRegistration),
+		slackBindings:      make(map[string]SlackWorkspaceBinding),
 	}
 }
 
@@ -871,6 +874,75 @@ func (s *MemoryStore) ListEntraAppRegistrations() ([]EntraAppRegistration, error
 		return 0
 	})
 	return registrations, nil
+}
+
+func (s *MemoryStore) SaveSlackWorkspaceBinding(binding SlackWorkspaceBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.slackBindings[binding.BindingID]; ok {
+		return ErrConflict
+	}
+	for _, existing := range s.slackBindings {
+		if existing.Status == SlackWorkspaceBindingStatusActive &&
+			existing.TenantID == binding.TenantID &&
+			existing.WorkspaceID == binding.WorkspaceID &&
+			existing.MissionRef == binding.MissionRef {
+			return ErrConflict
+		}
+	}
+	s.slackBindings[binding.BindingID] = binding
+	return nil
+}
+
+func (s *MemoryStore) GetSlackWorkspaceBinding(id string) (SlackWorkspaceBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	binding, ok := s.slackBindings[id]
+	if !ok {
+		return SlackWorkspaceBinding{}, ErrNotFound
+	}
+	return binding, nil
+}
+
+func (s *MemoryStore) UpdateSlackWorkspaceBinding(binding SlackWorkspaceBinding) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.slackBindings[binding.BindingID]; !ok {
+		return ErrNotFound
+	}
+	s.slackBindings[binding.BindingID] = binding
+	return nil
+}
+
+func (s *MemoryStore) ListSlackWorkspaceBindings() ([]SlackWorkspaceBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	bindings := make([]SlackWorkspaceBinding, 0, len(s.slackBindings))
+	for _, binding := range s.slackBindings {
+		bindings = append(bindings, binding)
+	}
+	slices.SortFunc(bindings, func(a, b SlackWorkspaceBinding) int {
+		if a.WorkspaceID < b.WorkspaceID {
+			return -1
+		}
+		if a.WorkspaceID > b.WorkspaceID {
+			return 1
+		}
+		if a.MissionRef < b.MissionRef {
+			return -1
+		}
+		if a.MissionRef > b.MissionRef {
+			return 1
+		}
+		if a.BindingID < b.BindingID {
+			return -1
+		}
+		if a.BindingID > b.BindingID {
+			return 1
+		}
+		return 0
+	})
+	return bindings, nil
 }
 
 func (s *MemoryStore) AppendEvent(event Event) error {

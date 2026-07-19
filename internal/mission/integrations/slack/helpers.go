@@ -23,13 +23,13 @@ func ExtractUserContext(req AuthorizeMessageActionRequest, binding WorkspaceBind
 		email = StringClaim(req.Claims, "email")
 	}
 
-	rollClaim := binding.RoleClaim
-	if rollClaim == "" {
-		rollClaim = "roles"
+	roleClaim := binding.RoleClaim
+	if roleClaim == "" {
+		roleClaim = "roles"
 	}
 	roles = CleanStringList(req.Roles)
 	if len(roles) == 0 {
-		roles = StringsClaim(req.Claims, rollClaim)
+		roles = StringsClaim(req.Claims, roleClaim)
 	}
 
 	return userID, email, roles, nil

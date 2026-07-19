@@ -197,6 +197,63 @@ func TestE2EAdvancedGovernanceFlow(t *testing.T) {
 	}
 }
 
+func TestE2ESlackIntegrationFlow(t *testing.T) {
+	service := testService()
+	router := NewHandler(service).Routes()
+	mission := approveSlackMission(t, service)
+
+	binding := postJSON[SlackWorkspaceBinding](t, router, "/v1/integrations/slack/workspace-bindings", CreateSlackWorkspaceBindingRequest{
+		WorkspaceID:     "T12345678",
+		WorkspaceName:   "Acme Corp",
+		WorkspaceURL:    "https://acme-corp.slack.com",
+		MissionRef:      mission.MissionRef,
+		RequiredRoles:   []string{"Workspace Admin"},
+		AllowedChannels: []string{"C11111111"},
+		AllowedActions:  []string{SlackActionTypePostMessage},
+	})
+	if binding.WorkspaceID != "T12345678" || binding.MissionRef != mission.MissionRef {
+		t.Fatalf("unexpected Slack binding: %#v", binding)
+	}
+
+	type slackBindingList struct {
+		WorkspaceBindings []SlackWorkspaceBinding `json:"workspace_bindings"`
+	}
+	list := getJSON[slackBindingList](t, router, "/v1/integrations/slack/workspace-bindings")
+	if len(list.WorkspaceBindings) != 1 || list.WorkspaceBindings[0].BindingID != binding.BindingID {
+		t.Fatalf("Slack binding list = %#v", list)
+	}
+
+	authorized := postJSON[SlackMessageAuthorizationResponse](t, router, "/v1/integrations/slack/message-actions/authorize", AuthorizeSlackMessageActionRequest{
+		WorkspaceID: "T12345678",
+		UserID:      "U12345678",
+		Roles:       []string{"Workspace Admin"},
+		ChannelID:   "C11111111",
+		Action:      SlackActionTypePostMessage,
+		Evaluation: &SlackEvaluationRequest{
+			MissionVersionSeen: mission.MissionVersion,
+			Actor:              SlackActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+			Action: SlackMessageAction{
+				Type:      "message_event",
+				Resource:  SlackActionResource{Type: "message", ID: "msg_123", ChannelID: "C11111111"},
+				Operation: "post",
+			},
+		},
+	})
+	if !authorized.Accepted || authorized.Evaluation == nil || authorized.Evaluation.Decision != string(DecisionAllow) {
+		t.Fatalf("Slack authorization = %#v, want accepted allow", authorized)
+	}
+
+	denied := postJSON[SlackMessageAuthorizationResponse](t, router, "/v1/integrations/slack/message-actions/authorize", AuthorizeSlackMessageActionRequest{
+		WorkspaceID: "T12345678",
+		UserID:      "U12345678",
+		Roles:       []string{"Workspace Admin"},
+		Action:      SlackActionTypePostMessage,
+	})
+	if denied.Accepted || !contains(denied.ReasonCodes, "slack_channel_not_allowed") {
+		t.Fatalf("Slack missing channel response = %#v, want channel denial", denied)
+	}
+}
+
 func TestE2EGrandGovernanceFlow(t *testing.T) {
 	service := testService()
 	router := NewHandler(service).Routes()

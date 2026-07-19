@@ -43,6 +43,7 @@ func NewHandlerWithOptions(service *Service, authenticator AdminAuthenticator, o
 		GitHub:          service,
 		Okta:            service,
 		Entra:           service,
+		Slack:           service,
 	}, authenticator, options)
 }
 
@@ -117,6 +118,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("POST /v1/integrations/entra/app-registrations", h.requireAdmin(http.HandlerFunc(h.createEntraAppRegistration)))
 	mux.Handle("GET /v1/integrations/entra/app-registrations", h.requireAdmin(http.HandlerFunc(h.listEntraAppRegistrations)))
 	mux.HandleFunc("POST /v1/integrations/entra/authority-context/resolve", h.resolveEntraAuthorityContext)
+	mux.Handle("POST /v1/integrations/slack/workspace-bindings", h.requireAdmin(http.HandlerFunc(h.createSlackWorkspaceBinding)))
+	mux.Handle("GET /v1/integrations/slack/workspace-bindings", h.requireAdmin(http.HandlerFunc(h.listSlackWorkspaceBindings)))
+	mux.HandleFunc("POST /v1/integrations/slack/message-actions/authorize", h.authorizeSlackMessageAction)
 	mux.Handle("GET /v1/events", h.requireAdmin(http.HandlerFunc(h.events)))
 	mux.Handle("GET /v1/events/stream", h.requireAdmin(http.HandlerFunc(h.eventsStream)))
 	return requestID(mux)
@@ -193,6 +197,7 @@ func (h *Handler) discovery(w http.ResponseWriter, r *http.Request) {
 			"github_integration":        true,
 			"okta_integration":          true,
 			"entra_integration":         true,
+			"slack_integration":         true,
 			"mission_proposals":         true,
 			"delegation":                true,
 			"expansion_requests":        true,

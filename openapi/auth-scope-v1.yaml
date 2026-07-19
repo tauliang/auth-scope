@@ -684,6 +684,52 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EntraAuthorityContextResponse" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/slack/workspace-bindings:
+    post:
+      operationId: createSlackWorkspaceBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSlackWorkspaceBindingRequest" }
+      responses:
+        "201":
+          description: Slack workspace binding.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackWorkspaceBinding" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listSlackWorkspaceBindings
+      responses:
+        "200":
+          description: Slack workspace bindings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace_bindings:
+                    type: array
+                    items: { $ref: "#/components/schemas/SlackWorkspaceBinding" }
+                required: [workspace_bindings]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/integrations/slack/message-actions/authorize:
+    post:
+      operationId: authorizeSlackMessageAction
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorizeSlackMessageActionRequest" }
+      responses:
+        "200":
+          description: Slack message authorization response with optional mission evaluation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SlackMessageAuthorizationResponse" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/events:
     get:
       operationId: listEvents
@@ -1279,6 +1325,125 @@ components:
         subject: { type: string }
         groups: { type: array, items: { type: string } }
         roles: { type: array, items: { type: string } }
+        admin: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        context: { type: object, additionalProperties: true }
+        evaluation: { type: object, additionalProperties: true }
+        resolved_at: { type: string }
+      required: [accepted, status, admin]
+    SlackPrincipal:
+      type: object
+      properties:
+        user_id: { type: string }
+        email: { type: string }
+    CreateSlackWorkspaceBindingRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        workspace_id: { type: string }
+        workspace_name: { type: string }
+        workspace_url: { type: string }
+        mission_ref: { type: string }
+        required_roles: { type: array, items: { type: string } }
+        admin_roles: { type: array, items: { type: string } }
+        allowed_channels: { type: array, items: { type: string } }
+        blocked_channels: { type: array, items: { type: string } }
+        allowed_users: { type: array, items: { type: string } }
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum: [post_message, edit_message, delete_message, react_message, start_thread]
+        role_claim: { type: string }
+        role_match_mode: { type: string, enum: [any, all] }
+        metadata: { type: object, additionalProperties: { type: string } }
+      required: [workspace_id, mission_ref]
+    SlackWorkspaceBinding:
+      type: object
+      additionalProperties: true
+      properties:
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        workspace_id: { type: string }
+        workspace_name: { type: string }
+        workspace_url: { type: string }
+        mission_ref: { type: string }
+        required_roles: { type: array, items: { type: string } }
+        admin_roles: { type: array, items: { type: string } }
+        allowed_channels: { type: array, items: { type: string } }
+        blocked_channels: { type: array, items: { type: string } }
+        allowed_users: { type: array, items: { type: string } }
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum: [post_message, edit_message, delete_message, react_message, start_thread]
+        role_claim: { type: string }
+        role_match_mode: { type: string }
+        status: { type: string }
+        metadata: { type: object, additionalProperties: { type: string } }
+        created_by: { $ref: "#/components/schemas/SlackPrincipal" }
+        created_at: { type: string, format: date-time }
+        last_resolved_at: { type: string, format: date-time }
+        last_user_id: { type: string }
+        last_resolution_status: { type: string }
+      required: [binding_id, workspace_id, mission_ref, status, created_at]
+    SlackActionResource:
+      type: object
+      properties:
+        type: { type: string }
+        id: { type: string }
+        channel_id: { type: string }
+      required: [type, id]
+    SlackMessageAction:
+      type: object
+      additionalProperties: true
+      properties:
+        type: { type: string }
+        name: { type: string }
+        resource: { $ref: "#/components/schemas/SlackActionResource" }
+        operation: { type: string }
+      required: [type, resource, operation]
+    SlackEvaluationRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { type: object, additionalProperties: true }
+        action: { $ref: "#/components/schemas/SlackMessageAction" }
+      required: [actor, action]
+    AuthorizeSlackMessageActionRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        workspace_id: { type: string }
+        user_id: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        channel_id: { type: string }
+        action:
+          type: string
+          enum: [post_message, edit_message, delete_message, react_message, start_thread]
+        claims: { type: object, additionalProperties: true }
+        context: { type: object, additionalProperties: true }
+        evaluation: { $ref: "#/components/schemas/SlackEvaluationRequest" }
+      required: [workspace_id, action]
+    SlackMessageAuthorizationResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        accepted: { type: boolean }
+        status: { type: string }
+        binding_id: { type: string }
+        tenant_id: { type: string }
+        mission_ref: { type: string }
+        workspace_id: { type: string }
+        user_id: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
+        channel_id: { type: string }
+        action: { type: string }
         admin: { type: boolean }
         reason_codes: { type: array, items: { type: string } }
         human_reason: { type: string }

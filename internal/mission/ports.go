@@ -87,6 +87,13 @@ type EntraStore interface {
 	ListEntraAppRegistrations() ([]EntraAppRegistration, error)
 }
 
+type SlackStore interface {
+	SaveSlackWorkspaceBinding(SlackWorkspaceBinding) error
+	GetSlackWorkspaceBinding(string) (SlackWorkspaceBinding, error)
+	UpdateSlackWorkspaceBinding(SlackWorkspaceBinding) error
+	ListSlackWorkspaceBindings() ([]SlackWorkspaceBinding, error)
+}
+
 type ExpansionDecisionStore interface {
 	CommitExpansionDecision(context.Context, ExpansionDecisionCommit) error
 }

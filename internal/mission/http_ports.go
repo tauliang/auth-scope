@@ -95,6 +95,12 @@ type EntraAPI interface {
 	ResolveEntraAuthorityContext(ResolveEntraAuthorityContextRequest) (EntraAuthorityContextResponse, error)
 }
 
+type SlackAPI interface {
+	CreateSlackWorkspaceBinding(CreateSlackWorkspaceBindingRequest, Principal) (SlackWorkspaceBinding, error)
+	ListSlackWorkspaceBindings() ([]SlackWorkspaceBinding, error)
+	AuthorizeSlackMessageAction(AuthorizeSlackMessageActionRequest) (SlackMessageAuthorizationResponse, error)
+}
+
 type HandlerServices struct {
 	Identity        IdentityAPI
 	Mission         MissionAPI
@@ -106,4 +112,5 @@ type HandlerServices struct {
 	GitHub          GitHubAPI
 	Okta            OktaAPI
 	Entra           EntraAPI
+	Slack           SlackAPI
 }

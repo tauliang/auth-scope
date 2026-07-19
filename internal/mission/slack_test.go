@@ -10,16 +10,16 @@ func TestSlackWorkspaceBindingAuthorizesMessageAction(t *testing.T) {
 	mission := approveSlackMission(t, service)
 
 	binding, err := service.CreateSlackWorkspaceBinding(CreateSlackWorkspaceBindingRequest{
-		WorkspaceID:   "T12345678",
-		WorkspaceName: "Acme Corp",
-		WorkspaceURL:  "https://acme-corp.slack.com",
-		MissionRef:    mission.MissionRef,
-		RequiredRoles: []string{"Workspace Admin"},
-		AdminRoles:    []string{"Owner"},
+		WorkspaceID:     "T12345678",
+		WorkspaceName:   "Acme Corp",
+		WorkspaceURL:    "https://acme-corp.slack.com",
+		MissionRef:      mission.MissionRef,
+		RequiredRoles:   []string{"Workspace Admin"},
+		AdminRoles:      []string{"Owner"},
 		AllowedChannels: []string{"C11111111", "C22222222"},
-		AllowedUsers:  []string{"U12345678"},
-		AllowedActions: []string{SlackActionTypePostMessage, SlackActionTypeReactMessage},
-		Metadata:      map[string]string{"environment": "production"},
+		AllowedUsers:    []string{"U12345678"},
+		AllowedActions:  []string{SlackActionTypePostMessage, SlackActionTypeReactMessage},
+		Metadata:        map[string]string{"environment": "production"},
 	}, Principal{Subject: "admin@example.com", Issuer: "https://idp.example.com"})
 	if err != nil {
 		t.Fatalf("CreateSlackWorkspaceBinding: %v", err)
@@ -28,9 +28,9 @@ func TestSlackWorkspaceBindingAuthorizesMessageAction(t *testing.T) {
 		t.Fatalf("unexpected binding: %#v", binding)
 	}
 	if _, err := service.CreateSlackWorkspaceBinding(CreateSlackWorkspaceBindingRequest{
-		WorkspaceID: "T12345678",
+		WorkspaceID:  "T12345678",
 		WorkspaceURL: "https://acme-corp.slack.com",
-		MissionRef:  mission.MissionRef,
+		MissionRef:   mission.MissionRef,
 	}, Principal{}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate binding err = %v, want ErrConflict", err)
 	}
@@ -45,7 +45,7 @@ func TestSlackWorkspaceBindingAuthorizesMessageAction(t *testing.T) {
 		Context:     map[string]any{"timestamp": 1234567890},
 		Evaluation: &SlackEvaluationRequest{
 			MissionVersionSeen: mission.MissionVersion,
-			Actor:              SlackActor{AgentInstanceID: "slack_bot_1", ClientID: "research-agent"},
+			Actor:              SlackActor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
 			Action: SlackMessageAction{
 				Type:      "message_event",
 				Resource:  SlackActionResource{Type: "message", ID: "msg_123", ChannelID: "C11111111"},
@@ -129,6 +129,33 @@ func TestSlackAuthorizeDeniesBlockedChannel(t *testing.T) {
 		t.Fatalf("AuthorizeSlackMessageAction: %v", err)
 	}
 	if resp.Accepted || resp.Status != SlackResolutionStatusDenied || resp.ReasonCodes[0] != "slack_channel_blocked" {
+		t.Fatalf("unexpected denial: %#v", resp)
+	}
+}
+
+func TestSlackAuthorizeDeniesMissingAllowedChannel(t *testing.T) {
+	service := testService()
+	mission := approveSlackMission(t, service)
+	if _, err := service.CreateSlackWorkspaceBinding(CreateSlackWorkspaceBindingRequest{
+		WorkspaceID:     "T12345678",
+		WorkspaceURL:    "https://acme-corp.slack.com",
+		MissionRef:      mission.MissionRef,
+		RequiredRoles:   []string{"Workspace Admin"},
+		AllowedChannels: []string{"C11111111"},
+	}, Principal{}); err != nil {
+		t.Fatalf("CreateSlackWorkspaceBinding: %v", err)
+	}
+
+	resp, err := service.AuthorizeSlackMessageAction(AuthorizeSlackMessageActionRequest{
+		WorkspaceID: "T12345678",
+		UserID:      "U12345678",
+		Roles:       []string{"Workspace Admin"},
+		Action:      SlackActionTypePostMessage,
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeSlackMessageAction: %v", err)
+	}
+	if resp.Accepted || resp.Status != SlackResolutionStatusDenied || resp.ReasonCodes[0] != "slack_channel_not_allowed" {
 		t.Fatalf("unexpected denial: %#v", resp)
 	}
 }

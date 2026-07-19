@@ -8,7 +8,7 @@
 - **Agent identity and runtime enforcement:** agent registry, Ed25519 request signatures, nonce replay protection, AuthZEN-compatible authorization, MCP-style tool contracts, signed external projections, short-lived mission leases, and fail-closed production startup checks.
 - **Governance controls:** multi-approver expansion rules, containment rules, blast-radius inspection, tenant-scoped administrator credentials, and runtime blocks for evaluation, delegation, expansion, projections, leases, and resume.
 - **Evidence and audit:** signed decision artifacts, stored policy evidence, immutable event history, Server-Sent Events streaming, transactional outbox publishing, and mission/agent lineage graphs.
-- **Identity and workflow integrations:** GitHub repository and check-run hooks for coding-agent PR governance, Okta application/group authority resolution, and Microsoft Entra app registration/group/role authority resolution.
+- **Identity and workflow integrations:** GitHub repository and check-run hooks for coding-agent PR governance, Okta application/group authority resolution, Microsoft Entra app registration/group/role authority resolution, and Slack workspace/message-action authorization.
 - **Operator experience:** Go HTTP API, in-memory and PostgreSQL-backed stores, embedded PostgreSQL migrations, React operator console, same-origin Docker Compose deployment with nginx `/api` proxy, OpenAPI contract, demo scripts, and a governed coding-agent workbench sample.
 - **Discovery and interoperability:** well-known Mission Authority and AuthZEN discovery documents plus generated frontend TypeScript declarations from `openapi/auth-scope-v1.yaml`.
 
@@ -57,7 +57,7 @@ Run the API locally without Docker:
 go run ./cmd/auth-scope
 ```
 
-The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts and projection tokens are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set. GitHub webhooks are verified with `AUTH_SCOPE_GITHUB_WEBHOOK_SECRET` or `GITHUB_WEBHOOK_SECRET` when the GitHub integration endpoints are enabled. Okta and Microsoft Entra bindings resolve already-verified OIDC claims into mission authority context and do not require a live identity-provider network dependency in the runtime hot path.
+The server listens on `:8080` by default and uses the in-memory store unless `DATABASE_URL` is set. Override the address with `AUTH_SCOPE_ADDR`. Decision artifacts and projection tokens are signed with `AUTH_SCOPE_DECISION_SECRET`; a development-only default is used when it is not set. GitHub webhooks are verified with `AUTH_SCOPE_GITHUB_WEBHOOK_SECRET` or `GITHUB_WEBHOOK_SECRET` when the GitHub integration endpoints are enabled. Okta and Microsoft Entra bindings resolve already-verified OIDC claims into mission authority context, and Slack bindings resolve already-verified Slack user/workspace facts into message-action authorization context. These integrations do not require a live provider network dependency in the runtime hot path.
 
 Set `AUTH_SCOPE_MODE=production` or `AUTH_SCOPE_ENV=production` for fail-closed startup checks. Production mode requires `DATABASE_URL`, explicit administrator credentials, and a non-placeholder `AUTH_SCOPE_DECISION_SECRET` of at least 32 characters. The production binary also requires signed agent requests on runtime authority endpoints such as mission evaluation, AuthZEN evaluation, delegation, projections, leases, and tool-call authorization.
 
@@ -220,6 +220,9 @@ POST /v1/integrations/okta/authority-context/resolve
 POST /v1/integrations/entra/app-registrations
 GET  /v1/integrations/entra/app-registrations
 POST /v1/integrations/entra/authority-context/resolve
+POST /v1/integrations/slack/workspace-bindings
+GET  /v1/integrations/slack/workspace-bindings
+POST /v1/integrations/slack/message-actions/authorize
 POST /v1/missions/{mission_ref}/leases
 POST /v1/leases/{lease_id}/refresh
 POST /v1/approval-rules
@@ -592,6 +595,52 @@ curl -s http://localhost:8080/v1/integrations/entra/authority-context/resolve \
   }'
 ```
 
+Bind a Slack workspace to a mission so a gateway or Slack app can authorize message actions against mission authority:
+
+```sh
+curl -s http://localhost:8080/v1/integrations/slack/workspace-bindings \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
+  -d '{
+    "tenant_id": "demo",
+    "workspace_id": "T12345678",
+    "workspace_name": "Acme Corp",
+    "workspace_url": "https://acme-corp.slack.com",
+    "mission_ref": "{mission_ref}",
+    "required_roles": ["Workspace Admin"],
+    "admin_roles": ["Owner"],
+    "allowed_channels": ["C11111111"],
+    "blocked_channels": ["C99999999"],
+    "allowed_actions": ["post_message", "react_message"],
+    "role_match_mode": "any"
+  }'
+```
+
+After a gateway verifies the Slack user/workspace facts, it can authorize a message action and optionally ask for a mission decision in the same call. Channel allowlists fail closed, so `channel_id` must be present when `allowed_channels` is configured:
+
+```sh
+curl -s http://localhost:8080/v1/integrations/slack/message-actions/authorize \
+  -H 'content-type: application/json' \
+  -d '{
+    "workspace_id": "T12345678",
+    "user_id": "U12345678",
+    "email": "user@example.com",
+    "roles": ["Workspace Admin"],
+    "channel_id": "C11111111",
+    "action": "post_message",
+    "context": {"risk": "low", "reversible": true},
+    "evaluation": {
+      "mission_version_seen": 1,
+      "actor": {"agent_instance_id": "inst_123", "client_id": "research-agent"},
+      "action": {
+        "type": "message_event",
+        "resource": {"type": "message", "id": "msg_123", "channel_id": "C11111111"},
+        "operation": "post"
+      }
+    }
+  }'
+```
+
 Create a containment rule during an incident. Active containment blocks evaluation, manual expansion, delegation, projection issuance/verification, lease creation/refresh, and resume when the mission, tenant, agent, principal, tool, or resource matches:
 
 ```sh
@@ -638,4 +687,4 @@ curl -s http://localhost:8080/access/v1/evaluation \
 
 ## MVP Boundary
 
-The MVP currently includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, GitHub repository/check-run integration hooks, Okta app/group authority-context integration hooks, and Microsoft Entra app/group authority-context integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, adding live JWKS/introspection verification where the gateway does not already verify identity-provider tokens, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.
+The MVP currently includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, GitHub repository/check-run integration hooks, Okta app/group authority-context integration hooks, Microsoft Entra app/group authority-context integration hooks, and Slack workspace/message-action integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, adding live JWKS/introspection verification where the gateway does not already verify identity-provider tokens or Slack user/workspace facts, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.

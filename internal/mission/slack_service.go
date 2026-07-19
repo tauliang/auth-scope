@@ -56,30 +56,58 @@ type slackEvaluator struct {
 }
 
 func (e slackEvaluator) Evaluate(missionRef string, req slackint.EvaluationRequest, context map[string]any) (slackint.EvaluationResponse, error) {
-	missionActor := missionActorFromSlack(req.Actor)
-	missionAction := missionActionFromSlack(req.Action)
-	resp, err := e.service.EvaluateMissionAction(missionRef, missionActor, missionAction, context)
+	resp, err := e.service.Evaluate(missionRef, EvaluateRequest{
+		MissionVersionSeen: req.MissionVersionSeen,
+		Actor:              missionActorFromSlack(req.Actor),
+		Action: Action{
+			Type: req.Action.Type,
+			Name: req.Action.Name,
+			Resource: ActionResource{
+				Type: req.Action.Resource.Type,
+				ID:   req.Action.Resource.ID,
+			},
+			Operation: req.Action.Operation,
+		},
+		Context: context,
+	})
 	if err != nil {
 		return slackint.EvaluationResponse{}, err
 	}
-	return slackEvaluationResponse(resp), nil
+	return slackint.EvaluationResponse{
+		Decision:         string(resp.Decision),
+		MissionRef:       resp.MissionRef,
+		MissionVersion:   resp.MissionVersion,
+		ReasonCodes:      resp.ReasonCodes,
+		HumanReason:      resp.HumanReason,
+		DecisionArtifact: resp.DecisionArtifact,
+		Constraints:      resp.Constraints,
+	}, nil
 }
 
 type slackEventSink struct {
-	events EventSink
+	events EventStore
 }
 
-func (s slackEventSink) AppendEvent(evt slackint.Event) error {
+func (s slackEventSink) AppendEvent(event slackint.Event) error {
 	if s.events == nil {
 		return nil
 	}
-	return s.events.AppendEvent(evt.Type, evt.Payload)
+	return s.events.AppendEvent(Event{
+		EventID:       event.EventID,
+		MissionRef:    event.MissionRef,
+		TenantID:      event.TenantID,
+		Type:          event.Type,
+		Actor:         event.Actor,
+		Payload:       event.Payload,
+		VersionBefore: event.VersionBefore,
+		VersionAfter:  event.VersionAfter,
+		OccurredAt:    event.OccurredAt,
+	})
 }
 
 func slackPrincipal(actor Principal) slackint.Principal {
 	return slackint.Principal{
 		UserID: actor.Subject,
-		Email:  actor.Email,
 	}
 }
 
@@ -96,26 +124,5 @@ func slackActor(actor Actor) SlackActor {
 		AgentInstanceID: actor.AgentInstanceID,
 		ClientID:        actor.ClientID,
 		KeyThumbprint:   actor.KeyThumbprint,
-	}
-}
-
-func missionActionFromSlack(action slackint.MessageAction) Action {
-	return Action{
-		Type:      action.Type,
-		Name:      action.Name,
-		Resource:  ResourceRef{Type: action.Resource.Type, ID: action.Resource.ID},
-		Operation: action.Operation,
-	}
-}
-
-func slackEvaluationResponse(resp EvaluationResponse) slackint.EvaluationResponse {
-	return slackint.EvaluationResponse{
-		Decision:         string(resp.Decision),
-		MissionRef:       resp.MissionRef,
-		MissionVersion:   resp.MissionVersion,
-		ReasonCodes:      resp.ReasonCodes,
-		HumanReason:      resp.HumanReason,
-		DecisionArtifact: resp.DecisionArtifact,
-		Constraints:      resp.Constraints,
 	}
 }

@@ -1,6 +1,10 @@
 package mission
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestSalesforceMissionAdapterRecordAuthorization(t *testing.T) {
 	service := testService()
@@ -91,6 +95,69 @@ func TestSalesforceMissionAdapterConversions(t *testing.T) {
 	actor := missionActorFromSalesforce(SalesforceActor{AgentInstanceID: "inst_123", ClientID: "agent", KeyThumbprint: "thumb"})
 	if actor.AgentInstanceID != "inst_123" || actor.ClientID != "agent" || actor.KeyThumbprint != "thumb" {
 		t.Fatalf("unexpected actor conversion: %#v", actor)
+	}
+}
+
+func TestSignedSalesforceRecordAPIBindsAgentIdentity(t *testing.T) {
+	service := testService()
+	publicKey, privateKey := testAgentKeypair(t)
+	registered, err := service.RegisterAgent(RegisterAgentRequest{
+		TenantID:  "demo",
+		Agent:     Agent{Provider: "https://agents.example.com", ClientID: "research-agent", InstanceID: "inst_123"},
+		PublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	mission := approveSalesforceMission(t, service)
+	if _, err := service.CreateSalesforceOrgBinding(CreateSalesforceOrgBindingRequest{
+		TenantID:               "demo",
+		InstanceURL:            "https://acme.my.salesforce.com",
+		MissionRef:             mission.MissionRef,
+		AllowedObjectAPINames:  []string{"Account"},
+		AllowedRecordTypeNames: []string{"Customer"},
+		AllowedActions:         []string{SalesforceActionUpdateRecord},
+		RequiredProfiles:       []string{"Standard User"},
+		RequiredPermissionSets: []string{"CRM Agent"},
+		AllowedSubjects:        []string{"005xx000001"},
+	}, Principal{Subject: "admin@example.com", Issuer: "https://idp.example.com"}); err != nil {
+		t.Fatalf("CreateSalesforceOrgBinding: %v", err)
+	}
+
+	body := AuthorizeSalesforceRecordActionRequest{
+		TenantID:       "demo",
+		MissionRef:     mission.MissionRef,
+		InstanceURL:    "https://acme.my.salesforce.com",
+		ObjectAPIName:  "Account",
+		RecordID:       "001xx000003DGbY",
+		RecordTypeName: "Customer",
+		Action:         SalesforceActionUpdateRecord,
+		UserID:         "005xx000001",
+		Subject:        "005xx000001",
+		Username:       "agent@example.com",
+		Email:          "agent@example.com",
+		Profile:        "Standard User",
+		PermissionSets: []string{"CRM Agent"},
+		Context:        map[string]any{"finance.close.status": "open", "risk": "low", "reversible": true},
+		Evaluation: &SalesforceEvaluationRequest{
+			MissionVersionSeen: mission.MissionVersion,
+			Action: SalesforceEvaluationAction{
+				Type:      "salesforce_record",
+				Resource:  SalesforceEvaluationActionResource{Type: "salesforce_record", ID: "Account:001xx000003DGbY"},
+				Operation: "update",
+			},
+		},
+	}
+	router := NewHandler(service).Routes()
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, signedJSONRequest(t, http.MethodPost, "/v1/integrations/salesforce/records/authorize", body, registered.AgentID, privateKey, "nonce-salesforce-record"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("signed Salesforce authorize status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp SalesforceRecordActionAuthorizationResponse
+	decodeTestJSON(t, rec.Body.Bytes(), &resp)
+	if !resp.Accepted || resp.Evaluation == nil || resp.Evaluation.Decision != string(DecisionAllow) {
+		t.Fatalf("signed Salesforce response = %#v, want accepted allow with evaluation", resp)
 	}
 }
 

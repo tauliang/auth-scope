@@ -315,3 +315,182 @@ func TestSalesforceServiceBindingLookupFailsClosed(t *testing.T) {
 		t.Fatalf("org-only response = %#v, want exact org binding", accepted)
 	}
 }
+
+func TestSalesforceServiceValidationAndErrorBranches(t *testing.T) {
+	if NewService(Config{}).isConflict(errors.New("anything")) {
+		t.Fatal("nil conflict classifier should fail closed")
+	}
+
+	for _, test := range []struct {
+		name string
+		req  CreateOrgBindingRequest
+	}{
+		{name: "bad instance", req: CreateOrgBindingRequest{InstanceURL: "acme.my.salesforce.com", MissionRef: "mref"}},
+		{name: "missing mission", req: CreateOrgBindingRequest{InstanceURL: "https://acme.my.salesforce.com"}},
+		{name: "bad permission mode", req: CreateOrgBindingRequest{InstanceURL: "https://acme.my.salesforce.com", MissionRef: "mref", PermissionSetMatchMode: "sometimes"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := newSalesforceService(newSalesforceMemoryStore(), nil, nil).CreateOrgBinding(test.req, Principal{}); err == nil {
+				t.Fatal("expected create validation error")
+			}
+		})
+	}
+
+	store := newSalesforceMemoryStore()
+	store.saveErr = errors.New("save failed")
+	if _, err := newSalesforceService(store, nil, nil).CreateOrgBinding(CreateOrgBindingRequest{
+		InstanceURL: "https://acme.my.salesforce.com",
+		MissionRef:  "mref",
+	}, Principal{}); err == nil {
+		t.Fatal("expected save error")
+	}
+}
+
+func TestSalesforceServiceAuthorizationEdgeBranches(t *testing.T) {
+	active := OrgBinding{
+		BindingID:              "sfb_1",
+		TenantID:               "demo",
+		InstanceURL:            "https://acme.my.salesforce.com",
+		OrgID:                  "00Dxx0000001ABC",
+		MissionRef:             "mref_123",
+		AllowedObjectAPINames:  []string{"Account"},
+		AllowedRecordTypeIDs:   []string{"012xx"},
+		AllowedRecordTypeNames: []string{"Customer"},
+		AllowedActions:         []string{ActionUpdateRecord},
+		RequiredProfiles:       []string{"Standard User"},
+		RequiredPermissionSets: []string{"CRM Agent"},
+		AllowedSubjects:        []string{"005xx000001"},
+		ProfileClaim:           "profile",
+		PermissionSetsClaim:    "permission_sets",
+		SubjectClaim:           "sub",
+		UsernameClaim:          "username",
+		EmailClaim:             "email",
+		PermissionSetMatchMode: PermissionMatchAll,
+		Status:                 OrgBindingStatusActive,
+	}
+	service := newSalesforceService(newSalesforceMemoryStore(
+		OrgBinding{BindingID: "disabled", InstanceURL: "https://disabled.my.salesforce.com", OrgID: "disabled", Status: OrgBindingStatusDisabled},
+		active,
+	), nil, &salesforceEventSink{})
+
+	for _, test := range []struct {
+		name string
+		call func() error
+	}{
+		{name: "missing action", call: func() error {
+			_, err := service.AuthorizeRecordAction(AuthorizeRecordActionRequest{ObjectAPIName: "Account", InstanceURL: "https://acme.my.salesforce.com"})
+			return err
+		}},
+		{name: "missing object", call: func() error {
+			_, err := service.AuthorizeRecordAction(AuthorizeRecordActionRequest{Action: ActionUpdateRecord, InstanceURL: "https://acme.my.salesforce.com"})
+			return err
+		}},
+		{name: "missing user context", call: func() error {
+			_, err := service.AuthorizeRecordAction(AuthorizeRecordActionRequest{Action: ActionUpdateRecord, ObjectAPIName: "Account", InstanceURL: "https://acme.my.salesforce.com"})
+			return err
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.call(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+
+	denied, err := service.AuthorizeRecordAction(AuthorizeRecordActionRequest{
+		TenantID:       "demo",
+		InstanceURL:    "https://acme.my.salesforce.com",
+		ObjectAPIName:  "Opportunity",
+		RecordTypeID:   "999",
+		RecordTypeName: "Prospect",
+		Action:         ActionDeleteRecord,
+		Subject:        "wrong-subject",
+		Profile:        "Read Only",
+		PermissionSets: []string{"Other"},
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeRecordAction denied: %v", err)
+	}
+	for _, code := range []string{
+		"salesforce_subject_not_allowed",
+		"salesforce_required_profile_missing",
+		"salesforce_required_permission_set_missing",
+		"salesforce_object_not_allowed",
+		"salesforce_record_type_id_not_allowed",
+		"salesforce_record_type_name_not_allowed",
+		"salesforce_action_not_allowed",
+	} {
+		if !ContainsString(denied.ReasonCodes, code) {
+			t.Fatalf("salesforce reasons = %#v, missing %s", denied.ReasonCodes, code)
+		}
+	}
+
+	_, err = service.AuthorizeRecordAction(AuthorizeRecordActionRequest{
+		TenantID:      "demo",
+		InstanceURL:   "://bad",
+		ObjectAPIName: "Account",
+		Action:        ActionUpdateRecord,
+		Subject:       "005xx000001",
+	})
+	if err == nil {
+		t.Fatal("expected invalid instance URL error")
+	}
+
+	listErrStore := newSalesforceMemoryStore(active)
+	listErrStore.listErr = errors.New("list failed")
+	_, err = newSalesforceService(listErrStore, nil, nil).AuthorizeRecordAction(AuthorizeRecordActionRequest{
+		InstanceURL:   "https://acme.my.salesforce.com",
+		ObjectAPIName: "Account",
+		Action:        ActionUpdateRecord,
+	})
+	if err == nil {
+		t.Fatal("expected list error")
+	}
+
+	noMatch, err := service.AuthorizeRecordAction(AuthorizeRecordActionRequest{
+		TenantID:      "other",
+		InstanceURL:   "https://disabled.my.salesforce.com",
+		OrgID:         "wrong-org",
+		ObjectAPIName: "Account",
+		Action:        ActionUpdateRecord,
+		Subject:       "005xx000001",
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeRecordAction no match: %v", err)
+	}
+	if noMatch.Accepted || !ContainsString(noMatch.ReasonCodes, "salesforce_no_matching_binding") {
+		t.Fatalf("no-match response = %#v", noMatch)
+	}
+}
+
+func TestSalesforceServiceEvaluatorErrorBranches(t *testing.T) {
+	binding := OrgBinding{
+		BindingID:              "sfb_1",
+		TenantID:               "demo",
+		InstanceURL:            "https://acme.my.salesforce.com",
+		MissionRef:             "mref_123",
+		AllowedObjectAPINames:  []string{"Account"},
+		AllowedActions:         []string{ActionUpdateRecord},
+		SubjectClaim:           "sub",
+		PermissionSetsClaim:    "permission_sets",
+		PermissionSetMatchMode: PermissionMatchAny,
+		Status:                 OrgBindingStatusActive,
+	}
+	req := AuthorizeRecordActionRequest{
+		TenantID:      "demo",
+		InstanceURL:   "https://acme.my.salesforce.com",
+		ObjectAPIName: "Account",
+		RecordID:      "001xx000003DGbY",
+		Action:        ActionUpdateRecord,
+		Subject:       "005xx000001",
+		Evaluation: &EvaluationRequest{
+			Action: EvaluationAction{Resource: EvaluationActionResource{Type: "salesforce_record", ID: "Account:001xx000003DGbY"}, Operation: "update"},
+		},
+	}
+	if _, err := newSalesforceService(newSalesforceMemoryStore(binding), nil, nil).AuthorizeRecordAction(req); err == nil || !strings.Contains(err.Error(), "evaluator") {
+		t.Fatalf("expected missing evaluator error, got %v", err)
+	}
+	if _, err := newSalesforceService(newSalesforceMemoryStore(binding), &salesforceEvaluator{err: errors.New("eval failed")}, nil).AuthorizeRecordAction(req); err == nil {
+		t.Fatal("expected evaluator error")
+	}
+}

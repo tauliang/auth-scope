@@ -2,6 +2,7 @@ package mission
 
 import (
 	"encoding/base64"
+	"errors"
 	"testing"
 	"time"
 )
@@ -114,4 +115,205 @@ func TestOperatorCollectionsEncodeEmptyItemsAsArray(t *testing.T) {
 	if page.Items == nil || len(page.Items) != 0 || page.Total != 0 {
 		t.Fatalf("empty page = %#v, want non-nil empty items", page)
 	}
+}
+
+func TestOperatorCollectionsPropagateStoreErrors(t *testing.T) {
+	boom := errors.New("store failed")
+	cases := []struct {
+		name  string
+		store *failingOperatorStore
+		call  func(*Service) error
+	}{
+		{
+			name:  "summary missions",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listMissionsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.OperationsSummary(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "summary proposals",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listProposalsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.OperationsSummary(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "summary expansions",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listExpansionsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.OperationsSummary(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "summary containments",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listContainmentsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.OperationsSummary(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "summary agents",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listAgentsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.OperationsSummary(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "summary projections",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listProjectionsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.OperationsSummary(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "list missions",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listMissionsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.ListMissions(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "list proposals",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listProposalsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.ListProposals(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "list expansions",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listExpansionsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.ListExpansions(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "list agents",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listAgentsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.ListAgents(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "list tools",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listToolsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.ListToolContracts(ListQuery{})
+				return err
+			},
+		},
+		{
+			name:  "list projections",
+			store: &failingOperatorStore{MemoryStore: NewMemoryStore(), listProjectionsErr: boom},
+			call: func(service *Service) error {
+				_, err := service.ListProjections(ListQuery{})
+				return err
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service := NewService(tc.store, fixedClock{now: time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)})
+			if err := tc.call(service); !errors.Is(err, boom) {
+				t.Fatalf("err = %v, want %v", err, boom)
+			}
+		})
+	}
+}
+
+func TestOperatorPaginationAndFilterHelpers(t *testing.T) {
+	items := make([]int, MaxCollectionLimit+5)
+	for i := range items {
+		items[i] = i
+	}
+	page, err := paginate(items, ListQuery{Limit: MaxCollectionLimit + 100})
+	if err != nil {
+		t.Fatalf("paginate capped: %v", err)
+	}
+	if len(page.Items) != MaxCollectionLimit || page.NextCursor == "" {
+		t.Fatalf("capped page = %#v", page)
+	}
+	nonNumericCursor := base64.RawURLEncoding.EncodeToString([]byte("nope"))
+	if _, err := paginate(items, ListQuery{Cursor: nonNumericCursor}); err == nil {
+		t.Fatal("expected non-numeric cursor to fail")
+	}
+	if tenantMatches("demo", "other") {
+		t.Fatal("unexpected tenant match")
+	}
+	if valueMatches("active", "revoked") {
+		t.Fatal("unexpected value match")
+	}
+	if textMatches("missing", "alpha", "beta") {
+		t.Fatal("unexpected text match")
+	}
+}
+
+type failingOperatorStore struct {
+	*MemoryStore
+	listMissionsErr     error
+	listProposalsErr    error
+	listExpansionsErr   error
+	listContainmentsErr error
+	listAgentsErr       error
+	listProjectionsErr  error
+	listToolsErr        error
+}
+
+func (s *failingOperatorStore) ListMissions() ([]Mission, error) {
+	if s.listMissionsErr != nil {
+		return nil, s.listMissionsErr
+	}
+	return s.MemoryStore.ListMissions()
+}
+
+func (s *failingOperatorStore) ListProposals() ([]MissionProposal, error) {
+	if s.listProposalsErr != nil {
+		return nil, s.listProposalsErr
+	}
+	return s.MemoryStore.ListProposals()
+}
+
+func (s *failingOperatorStore) ListExpansionRequests() ([]ExpansionRequest, error) {
+	if s.listExpansionsErr != nil {
+		return nil, s.listExpansionsErr
+	}
+	return s.MemoryStore.ListExpansionRequests()
+}
+
+func (s *failingOperatorStore) ListContainmentRules() ([]ContainmentRule, error) {
+	if s.listContainmentsErr != nil {
+		return nil, s.listContainmentsErr
+	}
+	return s.MemoryStore.ListContainmentRules()
+}
+
+func (s *failingOperatorStore) ListAgentIdentities() ([]AgentIdentity, error) {
+	if s.listAgentsErr != nil {
+		return nil, s.listAgentsErr
+	}
+	return s.MemoryStore.ListAgentIdentities()
+}
+
+func (s *failingOperatorStore) ListProjections() ([]Projection, error) {
+	if s.listProjectionsErr != nil {
+		return nil, s.listProjectionsErr
+	}
+	return s.MemoryStore.ListProjections()
+}
+
+func (s *failingOperatorStore) ListToolContracts() ([]ToolContract, error) {
+	if s.listToolsErr != nil {
+		return nil, s.listToolsErr
+	}
+	return s.MemoryStore.ListToolContracts()
 }

@@ -308,3 +308,197 @@ func TestAtlassianServiceBindingLookupFailsClosed(t *testing.T) {
 		t.Fatalf("cloud-only response = %#v, want exact cloud binding", accepted)
 	}
 }
+
+func TestAtlassianServiceValidationAndErrorBranches(t *testing.T) {
+	if NewService(Config{}).isConflict(errors.New("anything")) {
+		t.Fatal("nil conflict classifier should fail closed")
+	}
+
+	for _, test := range []struct {
+		name string
+		req  CreateSiteBindingRequest
+	}{
+		{name: "bad site", req: CreateSiteBindingRequest{SiteURL: "acme.atlassian.net", MissionRef: "mref"}},
+		{name: "missing mission", req: CreateSiteBindingRequest{SiteURL: "https://acme.atlassian.net"}},
+		{name: "bad group mode", req: CreateSiteBindingRequest{SiteURL: "https://acme.atlassian.net", MissionRef: "mref", GroupMatchMode: "sometimes"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := newAtlassianService(newAtlassianMemoryStore(), nil, nil).CreateSiteBinding(test.req, Principal{}); err == nil {
+				t.Fatal("expected create validation error")
+			}
+		})
+	}
+
+	store := newAtlassianMemoryStore()
+	store.saveErr = errors.New("save failed")
+	if _, err := newAtlassianService(store, nil, nil).CreateSiteBinding(CreateSiteBindingRequest{
+		SiteURL:    "https://acme.atlassian.net",
+		MissionRef: "mref",
+	}, Principal{}); err == nil {
+		t.Fatal("expected save error")
+	}
+}
+
+func TestAtlassianServiceAuthorizationEdgeBranches(t *testing.T) {
+	active := SiteBinding{
+		BindingID:            "atb_1",
+		TenantID:             "demo",
+		SiteURL:              "https://acme.atlassian.net",
+		CloudID:              "cloud_123",
+		MissionRef:           "mref_123",
+		JiraProjectKeys:      []string{"FIN"},
+		ConfluenceSpaceKeys:  []string{"ENG"},
+		AllowedJiraActions:   []string{JiraActionTransitionIssue},
+		AllowedPageActions:   []string{ConfluenceActionUpdatePage},
+		RequiredGroups:       []string{"Mission Operators"},
+		AllowedSubjects:      []string{"acc_123"},
+		GroupClaim:           "groups",
+		SubjectClaim:         "sub",
+		EmailClaim:           "email",
+		GroupMatchMode:       GroupMatchAll,
+		Status:               SiteBindingStatusActive,
+		LastResolutionStatus: ResolutionStatusAccepted,
+	}
+	service := newAtlassianService(newAtlassianMemoryStore(
+		SiteBinding{BindingID: "disabled", SiteURL: "https://disabled.atlassian.net", CloudID: "disabled", Status: SiteBindingStatusDisabled},
+		active,
+	), nil, &atlassianEventSink{})
+
+	for _, test := range []struct {
+		name string
+		call func() error
+	}{
+		{name: "jira missing action", call: func() error {
+			_, err := service.AuthorizeJiraIssueAction(AuthorizeJiraIssueActionRequest{IssueKey: "FIN-1", SiteURL: "https://acme.atlassian.net"})
+			return err
+		}},
+		{name: "jira missing project", call: func() error {
+			_, err := service.AuthorizeJiraIssueAction(AuthorizeJiraIssueActionRequest{Action: JiraActionTransitionIssue, SiteURL: "https://acme.atlassian.net"})
+			return err
+		}},
+		{name: "jira missing user context", call: func() error {
+			_, err := service.AuthorizeJiraIssueAction(AuthorizeJiraIssueActionRequest{Action: JiraActionTransitionIssue, IssueKey: "FIN-1", SiteURL: "https://acme.atlassian.net"})
+			return err
+		}},
+		{name: "confluence missing action", call: func() error {
+			_, err := service.AuthorizeConfluencePageAction(AuthorizeConfluencePageActionRequest{SpaceKey: "ENG", SiteURL: "https://acme.atlassian.net"})
+			return err
+		}},
+		{name: "confluence missing space", call: func() error {
+			_, err := service.AuthorizeConfluencePageAction(AuthorizeConfluencePageActionRequest{Action: ConfluenceActionUpdatePage, SiteURL: "https://acme.atlassian.net"})
+			return err
+		}},
+		{name: "confluence missing user context", call: func() error {
+			_, err := service.AuthorizeConfluencePageAction(AuthorizeConfluencePageActionRequest{Action: ConfluenceActionUpdatePage, SpaceKey: "ENG", SiteURL: "https://acme.atlassian.net"})
+			return err
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.call(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+
+	deniedJira, err := service.AuthorizeJiraIssueAction(AuthorizeJiraIssueActionRequest{
+		TenantID: "demo",
+		SiteURL:  "https://acme.atlassian.net",
+		IssueKey: "HR-1",
+		Action:   JiraActionCommentIssue,
+		Subject:  "wrong-subject",
+		Groups:   []string{"Other"},
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeJiraIssueAction denied: %v", err)
+	}
+	for _, code := range []string{"atlassian_subject_not_allowed", "atlassian_required_group_missing", "jira_project_not_allowed", "jira_action_not_allowed"} {
+		if !ContainsString(deniedJira.ReasonCodes, code) {
+			t.Fatalf("jira reasons = %#v, missing %s", deniedJira.ReasonCodes, code)
+		}
+	}
+
+	deniedConfluence, err := service.AuthorizeConfluencePageAction(AuthorizeConfluencePageActionRequest{
+		TenantID: "demo",
+		SiteURL:  "https://acme.atlassian.net",
+		SpaceKey: "ENG",
+		Action:   ConfluenceActionCommentPage,
+		Subject:  "acc_123",
+		Groups:   []string{"Mission Operators"},
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeConfluencePageAction denied: %v", err)
+	}
+	if !ContainsString(deniedConfluence.ReasonCodes, "confluence_action_not_allowed") {
+		t.Fatalf("confluence reasons = %#v, want action denial", deniedConfluence.ReasonCodes)
+	}
+
+	_, err = service.AuthorizeJiraIssueAction(AuthorizeJiraIssueActionRequest{
+		TenantID: "demo",
+		SiteURL:  "://bad",
+		IssueKey: "FIN-1",
+		Action:   JiraActionTransitionIssue,
+		Subject:  "acc_123",
+		Groups:   []string{"Mission Operators"},
+	})
+	if err == nil {
+		t.Fatal("expected invalid site URL error")
+	}
+
+	listErrStore := newAtlassianMemoryStore(active)
+	listErrStore.listErr = errors.New("list failed")
+	_, err = newAtlassianService(listErrStore, nil, nil).AuthorizeJiraIssueAction(AuthorizeJiraIssueActionRequest{
+		SiteURL:  "https://acme.atlassian.net",
+		IssueKey: "FIN-1",
+		Action:   JiraActionTransitionIssue,
+	})
+	if err == nil {
+		t.Fatal("expected list error")
+	}
+
+	noMatch, err := service.AuthorizeJiraIssueAction(AuthorizeJiraIssueActionRequest{
+		TenantID: "other",
+		SiteURL:  "https://disabled.atlassian.net",
+		CloudID:  "wrong-cloud",
+		IssueKey: "FIN-1",
+		Action:   JiraActionTransitionIssue,
+		Subject:  "acc_123",
+		Groups:   []string{"Mission Operators"},
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeJiraIssueAction no match: %v", err)
+	}
+	if noMatch.Accepted || !ContainsString(noMatch.ReasonCodes, "atlassian_no_matching_binding") {
+		t.Fatalf("no-match response = %#v", noMatch)
+	}
+}
+
+func TestAtlassianServiceEvaluatorErrorBranches(t *testing.T) {
+	binding := SiteBinding{
+		BindingID:          "atb_1",
+		TenantID:           "demo",
+		SiteURL:            "https://acme.atlassian.net",
+		MissionRef:         "mref_123",
+		JiraProjectKeys:    []string{"FIN"},
+		AllowedJiraActions: []string{JiraActionTransitionIssue},
+		SubjectClaim:       "sub",
+		GroupClaim:         "groups",
+		GroupMatchMode:     GroupMatchAny,
+		Status:             SiteBindingStatusActive,
+	}
+	req := AuthorizeJiraIssueActionRequest{
+		TenantID: "demo",
+		SiteURL:  "https://acme.atlassian.net",
+		IssueKey: "FIN-1",
+		Action:   JiraActionTransitionIssue,
+		Subject:  "acc_123",
+		Evaluation: &EvaluationRequest{
+			Action: EvaluationAction{Resource: EvaluationActionResource{Type: "jira_issue", ID: "FIN-1"}, Operation: "transition"},
+		},
+	}
+	if _, err := newAtlassianService(newAtlassianMemoryStore(binding), nil, nil).AuthorizeJiraIssueAction(req); err == nil || !strings.Contains(err.Error(), "evaluator") {
+		t.Fatalf("expected missing evaluator error, got %v", err)
+	}
+	if _, err := newAtlassianService(newAtlassianMemoryStore(binding), &atlassianEvaluator{err: errors.New("eval failed")}, nil).AuthorizeJiraIssueAction(req); err == nil {
+		t.Fatal("expected evaluator error")
+	}
+}

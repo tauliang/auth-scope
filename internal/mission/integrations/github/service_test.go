@@ -73,6 +73,9 @@ func (s *githubMemoryStore) ListRepositoryBindings() ([]RepositoryBinding, error
 }
 
 func (s *githubMemoryStore) SaveWebhookDelivery(delivery WebhookDelivery) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
 	if _, exists := s.deliveries[delivery.DeliveryID]; exists {
 		return s.conflict
 	}
@@ -324,5 +327,120 @@ func TestGitHubHelpersNormalizeSummarizeAndValidateSignatures(t *testing.T) {
 	}
 	if CheckText([]CheckEvaluation{{Decision: "allow"}, {Decision: "deny"}, {Decision: "deny"}}) != "1 allow, 2 deny" {
 		t.Fatal("unexpected check text")
+	}
+}
+
+func TestGitHubServiceValidationAndWebhookErrorBranches(t *testing.T) {
+	if NewService(Config{}).isConflict(errors.New("anything")) {
+		t.Fatal("nil conflict classifier should fail closed")
+	}
+	if _, err := newGitHubService(newGitHubMemoryStore(), nil, nil).CreateRepositoryBinding(CreateRepositoryBindingRequest{Repository: "missing-owner"}, Principal{}); err == nil {
+		t.Fatal("expected invalid repository error")
+	}
+	saveErrStore := newGitHubMemoryStore()
+	saveErrStore.saveErr = errors.New("save failed")
+	if _, err := newGitHubService(saveErrStore, nil, nil).CreateRepositoryBinding(CreateRepositoryBindingRequest{Repository: "acme/auth-scope"}, Principal{}); err == nil {
+		t.Fatal("expected repository save error")
+	}
+
+	body := []byte(`{"repository":{"full_name":"acme/auth-scope"}}`)
+	signature := SignWebhookBody([]byte("secret"), body)
+	service := newGitHubService(newGitHubMemoryStore(), nil, &githubEventSink{})
+	for _, test := range []struct {
+		name string
+		req  IngestWebhookRequest
+	}{
+		{name: "missing event", req: IngestWebhookRequest{DeliveryID: "d1", Signature: signature, Body: body}},
+		{name: "missing delivery", req: IngestWebhookRequest{Event: "push", Signature: signature, Body: body}},
+		{name: "invalid signature", req: IngestWebhookRequest{Event: "push", DeliveryID: "d1", Signature: "sha256=bad", Body: body}},
+		{name: "bad json", req: IngestWebhookRequest{Event: "push", DeliveryID: "d1", Signature: SignWebhookBody([]byte("secret"), []byte("{")), Body: []byte("{")}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := service.IngestWebhook(test.req); err == nil {
+				t.Fatal("expected webhook error")
+			}
+		})
+	}
+
+	noSecret := NewService(Config{Store: newGitHubMemoryStore()})
+	if _, err := noSecret.IngestWebhook(IngestWebhookRequest{Event: "push", DeliveryID: "d1", Signature: signature, Body: body}); err == nil {
+		t.Fatal("expected missing webhook secret error")
+	}
+
+	listErrStore := newGitHubMemoryStore()
+	listErrStore.listErr = errors.New("list failed")
+	if _, err := newGitHubService(listErrStore, nil, nil).IngestWebhook(IngestWebhookRequest{Event: "push", DeliveryID: "d1", Signature: signature, Body: body}); err == nil {
+		t.Fatal("expected binding lookup list error")
+	}
+
+	ignored, err := service.IngestWebhook(IngestWebhookRequest{Event: "push", DeliveryID: "ignored-1", Signature: signature, Body: body})
+	if err != nil {
+		t.Fatalf("IngestWebhook ignored: %v", err)
+	}
+	if ignored.Accepted || ignored.Status != WebhookDeliveryStatusIgnored {
+		t.Fatalf("ignored webhook = %#v, want ignored status", ignored)
+	}
+
+	deliveryErrStore := newGitHubMemoryStore()
+	deliveryErrStore.saveErr = errors.New("delivery save failed")
+	if _, err := newGitHubService(deliveryErrStore, nil, nil).IngestWebhook(IngestWebhookRequest{Event: "push", DeliveryID: "d2", Signature: signature, Body: body}); err == nil {
+		t.Fatal("expected delivery save error")
+	}
+}
+
+func TestGitHubServiceCheckRunErrorAndConclusionBranches(t *testing.T) {
+	active := RepositoryBinding{BindingID: "ghr_1", TenantID: "demo", Repository: "acme/auth-scope", MissionRef: "mref_123", Status: RepositoryBindingStatusActive}
+	for _, test := range []struct {
+		name    string
+		store   *githubMemoryStore
+		eval    Evaluator
+		request CheckRunPlanRequest
+	}{
+		{name: "bad repository", store: newGitHubMemoryStore(active), request: CheckRunPlanRequest{Repository: "missing-owner", HeadSHA: "abc", ChangedFiles: []ChangedFile{{Path: "README.md"}}}},
+		{name: "missing head", store: newGitHubMemoryStore(active), request: CheckRunPlanRequest{Repository: "acme/auth-scope", ChangedFiles: []ChangedFile{{Path: "README.md"}}}},
+		{name: "missing files", store: newGitHubMemoryStore(active), request: CheckRunPlanRequest{Repository: "acme/auth-scope", HeadSHA: "abc"}},
+		{name: "list error", store: func() *githubMemoryStore {
+			store := newGitHubMemoryStore(active)
+			store.listErr = errors.New("list failed")
+			return store
+		}(), request: CheckRunPlanRequest{Repository: "acme/auth-scope", HeadSHA: "abc", ChangedFiles: []ChangedFile{{Path: "README.md"}}}},
+		{name: "not bound", store: newGitHubMemoryStore(), request: CheckRunPlanRequest{Repository: "acme/auth-scope", HeadSHA: "abc", ChangedFiles: []ChangedFile{{Path: "README.md"}}}},
+		{name: "missing mission ref", store: newGitHubMemoryStore(RepositoryBinding{BindingID: "ghr_1", Repository: "acme/auth-scope", Status: RepositoryBindingStatusActive}), request: CheckRunPlanRequest{Repository: "acme/auth-scope", HeadSHA: "abc", ChangedFiles: []ChangedFile{{Path: "README.md"}}}},
+		{name: "mission mismatch", store: newGitHubMemoryStore(active), request: CheckRunPlanRequest{Repository: "acme/auth-scope", MissionRef: "other", HeadSHA: "abc", ChangedFiles: []ChangedFile{{Path: "README.md"}}}},
+		{name: "empty path", store: newGitHubMemoryStore(active), eval: &githubEvaluator{}, request: CheckRunPlanRequest{Repository: "acme/auth-scope", HeadSHA: "abc", ChangedFiles: []ChangedFile{{Path: " / "}}}},
+		{name: "evaluator error", store: newGitHubMemoryStore(active), eval: &githubEvaluator{err: errors.New("eval failed")}, request: CheckRunPlanRequest{Repository: "acme/auth-scope", HeadSHA: "abc", ChangedFiles: []ChangedFile{{Path: "README.md"}}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			eval := test.eval
+			if eval == nil {
+				eval = &githubEvaluator{}
+			}
+			if _, err := newGitHubService(test.store, eval, nil).PlanCheckRun(test.request); err == nil {
+				t.Fatal("expected check-run planning error")
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name       string
+		decision   string
+		conclusion string
+	}{
+		{name: "approval", decision: "require_approval", conclusion: CheckConclusionActionRequired},
+		{name: "refresh", decision: "require_refresh", conclusion: CheckConclusionNeutral},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resp, err := newGitHubService(newGitHubMemoryStore(active), &githubEvaluator{responses: []EvaluationResponse{{Decision: test.decision, MissionVersion: 7}}}, &githubEventSink{}).PlanCheckRun(CheckRunPlanRequest{
+				Repository:   "acme/auth-scope",
+				HeadSHA:      "abc",
+				ChangedFiles: []ChangedFile{{Path: "README.md"}},
+			})
+			if err != nil {
+				t.Fatalf("PlanCheckRun: %v", err)
+			}
+			if resp.Conclusion != test.conclusion {
+				t.Fatalf("conclusion = %s, want %s", resp.Conclusion, test.conclusion)
+			}
+		})
 	}
 }

@@ -13,3 +13,7 @@ open samples/governed-coding-agent-workbench/index.html
 ```
 
 The sample models Codex/OpenCode-style actions such as reading files, editing files, running tests, installing dependencies, opening pull requests, and attempting deployment. It also showcases GitHub, Okta, Entra ID, Slack, Atlassian Jira, Confluence, ServiceNow, and Salesforce integration events flowing through the same mission-authority contract. It shows the corresponding decisions, approval queue, containment posture, integration preview, and audit ledger.
+
+## Hosting
+
+The governed coding-agent sample can be hosted on GitHub Pages through [`.github/workflows/deploy-sample-pages.yml`](../.github/workflows/deploy-sample-pages.yml). See [`docs/github-pages.md`](../docs/github-pages.md) for setup steps and the manual repository settings that GitHub still requires.

@@ -103,6 +103,10 @@ The console keeps administrator bearer credentials in React memory only. Refresh
 
 The [`samples`](samples) directory contains small companion apps that demonstrate how Auth Scope can govern real agent workflows. Start with [`samples/governed-coding-agent-workbench`](samples/governed-coding-agent-workbench), a static sample that models a Codex/OpenCode-style coding agent asking for mission authority before file edits, tests, dependency changes, pull requests, and deployment.
 
+## GitHub Pages Demo Hosting
+
+The static Governed Coding Agent Workbench sample can be published with GitHub Pages using the workflow at [`.github/workflows/deploy-sample-pages.yml`](.github/workflows/deploy-sample-pages.yml). See [GitHub Pages Deployment](docs/github-pages.md) for the automated path and the remaining manual repository settings.
+
 ## Test
 
 ```sh

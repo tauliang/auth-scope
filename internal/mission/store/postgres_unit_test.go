@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -679,6 +680,283 @@ func TestPostgresStoreCommitExpansionDecisionRollsBackOnConflictAndEventFailure(
 	mock.ExpectRollback()
 	if err := store.CommitExpansionDecision(context.Background(), commit); err == nil {
 		t.Fatal("expected event failure to roll back expansion decision")
+	}
+}
+
+func TestPostgresStoreTransactionErrorBranches(t *testing.T) {
+	t.Run("proposal begin error", func(t *testing.T) {
+		store, mock, cleanup := newMockPostgresStore(t)
+		defer cleanup()
+		mock.ExpectBegin().WillReturnError(errors.New("begin failed"))
+		if err := store.CommitProposalApproval(context.Background(), mission.ProposalApprovalCommit{Mission: sampleMission()}); err == nil {
+			t.Fatal("expected begin error")
+		}
+	})
+
+	t.Run("proposal insert conflict and generic error", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			err  error
+			want error
+		}{
+			{name: "unique", err: &pq.Error{Code: "23505"}, want: mission.ErrConflict},
+			{name: "generic", err: errors.New("insert failed")},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				store, mock, cleanup := newMockPostgresStore(t)
+				defer cleanup()
+				mock.ExpectBegin()
+				mock.ExpectExec("INSERT INTO missions").WillReturnError(tc.err)
+				mock.ExpectRollback()
+				err := store.CommitProposalApproval(context.Background(), mission.ProposalApprovalCommit{Mission: sampleMission()})
+				if tc.want != nil && !errors.Is(err, tc.want) {
+					t.Fatalf("err = %v, want %v", err, tc.want)
+				}
+				if tc.want == nil && err == nil {
+					t.Fatal("expected insert error")
+				}
+			})
+		}
+	})
+
+	t.Run("proposal delete and outbox errors", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			setup  func(sqlmock.Sqlmock, mission.Event)
+			assert func(*testing.T, error)
+		}{
+			{
+				name: "delete exec",
+				setup: func(mock sqlmock.Sqlmock, _ mission.Event) {
+					mock.ExpectExec("INSERT INTO missions").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("DELETE FROM mission_proposals").WillReturnError(errors.New("delete failed"))
+					mock.ExpectRollback()
+				},
+			},
+			{
+				name: "delete rows affected",
+				setup: func(mock sqlmock.Sqlmock, _ mission.Event) {
+					mock.ExpectExec("INSERT INTO missions").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("DELETE FROM mission_proposals").WillReturnResult(sqlmock.NewErrorResult(errors.New("rows affected failed")))
+					mock.ExpectRollback()
+				},
+			},
+			{
+				name: "outbox insert",
+				setup: func(mock sqlmock.Sqlmock, event mission.Event) {
+					mock.ExpectExec("INSERT INTO missions").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("DELETE FROM mission_proposals").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO outbox_events").WillReturnError(errors.New("outbox failed"))
+					mock.ExpectRollback()
+					_ = event
+				},
+			},
+			{
+				name: "commit",
+				setup: func(mock sqlmock.Sqlmock, event mission.Event) {
+					mock.ExpectExec("INSERT INTO missions").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("DELETE FROM mission_proposals").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO outbox_events").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectCommit().WillReturnError(errors.New("commit failed"))
+					_ = event
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				store, mock, cleanup := newMockPostgresStore(t)
+				defer cleanup()
+				event := sampleEvent()
+				mock.ExpectBegin()
+				tc.setup(mock, event)
+				err := store.CommitProposalApproval(context.Background(), mission.ProposalApprovalCommit{
+					ProposalID: "proposal-1",
+					Mission:    sampleMission(),
+					Event:      event,
+				})
+				if err == nil {
+					t.Fatal("expected transaction error")
+				}
+			})
+		}
+	})
+
+	t.Run("expansion transaction errors", func(t *testing.T) {
+		baseCommit := func() mission.ExpansionDecisionCommit {
+			m := sampleMission()
+			expectedVersion := m.Version
+			m.Version++
+			expansion := sampleExpansionRequest()
+			expansion.Status = mission.ExpansionStatusApproved
+			return mission.ExpansionDecisionCommit{
+				Mission:                 &m,
+				ExpectedMissionVersion:  expectedVersion,
+				Expansion:               expansion,
+				ExpectedExpansionStatus: mission.ExpansionStatusPending,
+				Event:                   sampleEvent(),
+			}
+		}
+		for _, tc := range []struct {
+			name  string
+			setup func(sqlmock.Sqlmock)
+		}{
+			{
+				name: "begin",
+				setup: func(mock sqlmock.Sqlmock) {
+					mock.ExpectBegin().WillReturnError(errors.New("begin failed"))
+				},
+			},
+			{
+				name: "mission update exec",
+				setup: func(mock sqlmock.Sqlmock) {
+					mock.ExpectBegin()
+					mock.ExpectExec("UPDATE missions SET").WillReturnError(errors.New("mission update failed"))
+					mock.ExpectRollback()
+				},
+			},
+			{
+				name: "mission rows affected",
+				setup: func(mock sqlmock.Sqlmock) {
+					mock.ExpectBegin()
+					mock.ExpectExec("UPDATE missions SET").WillReturnResult(sqlmock.NewErrorResult(errors.New("rows affected failed")))
+					mock.ExpectRollback()
+				},
+			},
+			{
+				name: "expansion update exec",
+				setup: func(mock sqlmock.Sqlmock) {
+					mock.ExpectBegin()
+					mock.ExpectExec("UPDATE missions SET").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("UPDATE expansion_requests SET").WillReturnError(errors.New("expansion update failed"))
+					mock.ExpectRollback()
+				},
+			},
+			{
+				name: "expansion rows conflict",
+				setup: func(mock sqlmock.Sqlmock) {
+					mock.ExpectBegin()
+					mock.ExpectExec("UPDATE missions SET").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("UPDATE expansion_requests SET").WillReturnResult(sqlmock.NewResult(0, 0))
+					mock.ExpectRollback()
+				},
+			},
+			{
+				name: "outbox insert",
+				setup: func(mock sqlmock.Sqlmock) {
+					mock.ExpectBegin()
+					mock.ExpectExec("UPDATE missions SET").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("UPDATE expansion_requests SET").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO outbox_events").WillReturnError(errors.New("outbox failed"))
+					mock.ExpectRollback()
+				},
+			},
+			{
+				name: "commit",
+				setup: func(mock sqlmock.Sqlmock) {
+					mock.ExpectBegin()
+					mock.ExpectExec("UPDATE missions SET").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("UPDATE expansion_requests SET").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO outbox_events").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectCommit().WillReturnError(errors.New("commit failed"))
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				store, mock, cleanup := newMockPostgresStore(t)
+				defer cleanup()
+				tc.setup(mock)
+				if err := store.CommitExpansionDecision(context.Background(), baseCommit()); err == nil {
+					t.Fatal("expected expansion transaction error")
+				}
+			})
+		}
+	})
+
+	t.Run("append event outbox and commit errors", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			setup func(sqlmock.Sqlmock)
+		}{
+			{
+				name: "outbox",
+				setup: func(mock sqlmock.Sqlmock) {
+					mock.ExpectBegin()
+					mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO outbox_events").WillReturnError(errors.New("outbox failed"))
+					mock.ExpectRollback()
+				},
+			},
+			{
+				name: "commit",
+				setup: func(mock sqlmock.Sqlmock) {
+					mock.ExpectBegin()
+					mock.ExpectExec("INSERT INTO events").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectExec("INSERT INTO outbox_events").WillReturnResult(sqlmock.NewResult(0, 1))
+					mock.ExpectCommit().WillReturnError(errors.New("commit failed"))
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				store, mock, cleanup := newMockPostgresStore(t)
+				defer cleanup()
+				tc.setup(mock)
+				if err := store.AppendEvent(sampleEvent()); err == nil {
+					t.Fatal("expected append event error")
+				}
+			})
+		}
+	})
+}
+
+func TestPostgresStoreOutboxErrorBranches(t *testing.T) {
+	event := sampleEvent()
+	for _, tc := range []struct {
+		name  string
+		setup func(sqlmock.Sqlmock)
+	}{
+		{
+			name: "query",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("WITH pending").WillReturnError(errors.New("query failed"))
+			},
+		},
+		{
+			name: "scan",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("WITH pending").
+					WillReturnRows(sqlmock.NewRows([]string{"id", "type", "mission_ref", "payload", "created_at"}).
+						AddRow(event.EventID, event.Type, event.MissionRef, []byte(`{}`), "not-a-time"))
+			},
+		},
+		{
+			name: "payload",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("WITH pending").
+					WillReturnRows(sqlmock.NewRows([]string{"id", "type", "mission_ref", "payload", "created_at"}).
+						AddRow(event.EventID, event.Type, event.MissionRef, []byte("{"), event.OccurredAt))
+			},
+		},
+		{
+			name: "rows",
+			setup: func(mock sqlmock.Sqlmock) {
+				mock.ExpectQuery("WITH pending").
+					WillReturnRows(sqlmock.NewRows([]string{"id", "type", "mission_ref", "payload", "created_at"}).
+						AddRow(event.EventID, event.Type, event.MissionRef, []byte(`{}`), event.OccurredAt).
+						RowError(0, errors.New("row failed")))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, mock, cleanup := newMockPostgresStore(t)
+			defer cleanup()
+			tc.setup(mock)
+			if _, err := store.PublishOutboxEvents(); err == nil {
+				t.Fatal("expected outbox error")
+			}
+		})
 	}
 }
 
@@ -1455,6 +1733,426 @@ func TestPostgresStoreListMethods(t *testing.T) {
 	}
 	if len(leases) != 1 || leases[0].LeaseID != lease.LeaseID {
 		t.Fatalf("ListMissionLeases = %#v", leases)
+	}
+}
+
+func TestPostgresStoreListErrorBranches(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+		column  string
+		json    []byte
+		args    []driver.Value
+		call    func(*PostgresStore) error
+	}{
+		{
+			name:    "agent identities",
+			pattern: "SELECT identity_json",
+			column:  "identity_json",
+			json:    mustJSON(t, sampleAgentIdentity()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListAgentIdentities()
+				return err
+			},
+		},
+		{
+			name:    "proposals",
+			pattern: "SELECT proposal_json",
+			column:  "proposal_json",
+			json:    mustJSON(t, sampleProposal()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListProposals()
+				return err
+			},
+		},
+		{
+			name:    "children",
+			pattern: "SELECT mission_json",
+			column:  "mission_json",
+			json:    mustJSON(t, sampleMission()),
+			args:    []driver.Value{"mref_parent"},
+			call: func(store *PostgresStore) error {
+				_, err := store.ChildrenOf("mref_parent")
+				return err
+			},
+		},
+		{
+			name:    "missions",
+			pattern: "SELECT mission_json",
+			column:  "mission_json",
+			json:    mustJSON(t, sampleMission()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListMissions()
+				return err
+			},
+		},
+		{
+			name:    "expansion requests",
+			pattern: "SELECT expansion_json",
+			column:  "expansion_json",
+			json:    mustJSON(t, sampleExpansionRequest()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListExpansionRequests()
+				return err
+			},
+		},
+		{
+			name:    "tool contracts",
+			pattern: "SELECT contract_json",
+			column:  "contract_json",
+			json:    mustJSON(t, sampleToolContract()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListToolContracts()
+				return err
+			},
+		},
+		{
+			name:    "projections",
+			pattern: "SELECT projection_json",
+			column:  "projection_json",
+			json:    mustJSON(t, sampleProjection()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListProjections()
+				return err
+			},
+		},
+		{
+			name:    "leases",
+			pattern: "SELECT lease_json",
+			column:  "lease_json",
+			json:    mustJSON(t, sampleMissionLease()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListMissionLeases()
+				return err
+			},
+		},
+		{
+			name:    "approval rules",
+			pattern: "SELECT rule_json",
+			column:  "rule_json",
+			json:    mustJSON(t, sampleApprovalRule()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListApprovalRules()
+				return err
+			},
+		},
+		{
+			name:    "approval records",
+			pattern: "SELECT record_json",
+			column:  "record_json",
+			json:    mustJSON(t, sampleApprovalRecord()),
+			args:    []driver.Value{sampleApprovalRecord().TargetType, sampleApprovalRecord().TargetID},
+			call: func(store *PostgresStore) error {
+				record := sampleApprovalRecord()
+				_, err := store.ListApprovalRecords(record.TargetType, record.TargetID)
+				return err
+			},
+		},
+		{
+			name:    "containment rules",
+			pattern: "SELECT rule_json",
+			column:  "rule_json",
+			json:    mustJSON(t, sampleContainmentRule()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListContainmentRules()
+				return err
+			},
+		},
+		{
+			name:    "github repository bindings",
+			pattern: "SELECT binding_json",
+			column:  "binding_json",
+			json:    mustJSON(t, sampleGitHubRepositoryBinding()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListGitHubRepositoryBindings()
+				return err
+			},
+		},
+		{
+			name:    "okta app bindings",
+			pattern: "SELECT binding_json",
+			column:  "binding_json",
+			json:    mustJSON(t, sampleOktaAppBinding()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListOktaAppBindings()
+				return err
+			},
+		},
+		{
+			name:    "entra app registrations",
+			pattern: "SELECT registration_json",
+			column:  "registration_json",
+			json:    mustJSON(t, sampleEntraAppRegistration()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListEntraAppRegistrations()
+				return err
+			},
+		},
+		{
+			name:    "slack workspace bindings",
+			pattern: "SELECT binding_json",
+			column:  "binding_json",
+			json:    mustJSON(t, sampleSlackWorkspaceBinding()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListSlackWorkspaceBindings()
+				return err
+			},
+		},
+		{
+			name:    "atlassian site bindings",
+			pattern: "SELECT binding_json",
+			column:  "binding_json",
+			json:    mustJSON(t, sampleAtlassianSiteBinding()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListAtlassianSiteBindings()
+				return err
+			},
+		},
+		{
+			name:    "salesforce org bindings",
+			pattern: "SELECT binding_json",
+			column:  "binding_json",
+			json:    mustJSON(t, sampleSalesforceOrgBinding()),
+			call: func(store *PostgresStore) error {
+				_, err := store.ListSalesforceOrgBindings()
+				return err
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name+"/query", func(t *testing.T) {
+			store, mock, cleanup := newMockPostgresStore(t)
+			defer cleanup()
+			query := mock.ExpectQuery(tc.pattern)
+			if len(tc.args) > 0 {
+				query.WithArgs(tc.args...)
+			}
+			query.WillReturnError(errors.New("query failed"))
+			if err := tc.call(store); err == nil {
+				t.Fatalf("expected query error")
+			}
+		})
+		t.Run(tc.name+"/malformed_json", func(t *testing.T) {
+			store, mock, cleanup := newMockPostgresStore(t)
+			defer cleanup()
+			rows := sqlmock.NewRows([]string{tc.column}).AddRow([]byte("{"))
+			query := mock.ExpectQuery(tc.pattern)
+			if len(tc.args) > 0 {
+				query.WithArgs(tc.args...)
+			}
+			query.WillReturnRows(rows)
+			if err := tc.call(store); err == nil {
+				t.Fatalf("expected malformed JSON error")
+			}
+		})
+		t.Run(tc.name+"/row_error", func(t *testing.T) {
+			store, mock, cleanup := newMockPostgresStore(t)
+			defer cleanup()
+			rows := sqlmock.NewRows([]string{tc.column}).AddRow(tc.json).RowError(0, errors.New("row failed"))
+			query := mock.ExpectQuery(tc.pattern)
+			if len(tc.args) > 0 {
+				query.WithArgs(tc.args...)
+			}
+			query.WillReturnRows(rows)
+			if err := tc.call(store); err == nil {
+				t.Fatalf("expected row iteration error")
+			}
+		})
+	}
+}
+
+func TestPostgresStoreGetErrorBranches(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+		arg     driver.Value
+		column  string
+		call    func(*PostgresStore) error
+	}{
+		{
+			name: "agent identity", pattern: "SELECT identity_json FROM agent_identities", arg: "agent-1", column: "identity_json",
+			call: func(store *PostgresStore) error { _, err := store.GetAgentIdentity("agent-1"); return err },
+		},
+		{
+			name: "proposal", pattern: "SELECT proposal_json FROM mission_proposals", arg: "proposal-1", column: "proposal_json",
+			call: func(store *PostgresStore) error { _, err := store.GetProposal("proposal-1"); return err },
+		},
+		{
+			name: "mission", pattern: "SELECT mission_json FROM missions", arg: "mref-1", column: "mission_json",
+			call: func(store *PostgresStore) error { _, err := store.GetMission("mref-1"); return err },
+		},
+		{
+			name: "expansion request", pattern: "SELECT expansion_json FROM expansion_requests", arg: "exp-1", column: "expansion_json",
+			call: func(store *PostgresStore) error { _, err := store.GetExpansionRequest("exp-1"); return err },
+		},
+		{
+			name: "evaluation evidence", pattern: "SELECT evidence_json FROM evaluation_evidence", arg: "evidence-1", column: "evidence_json",
+			call: func(store *PostgresStore) error { _, err := store.GetEvaluationEvidence("evidence-1"); return err },
+		},
+		{
+			name: "tool contract", pattern: "SELECT contract_json FROM tool_contracts", arg: "tool.read", column: "contract_json",
+			call: func(store *PostgresStore) error { _, err := store.GetToolContract("tool.read"); return err },
+		},
+		{
+			name: "projection", pattern: "SELECT projection_json FROM projections", arg: "projection-1", column: "projection_json",
+			call: func(store *PostgresStore) error { _, err := store.GetProjection("projection-1"); return err },
+		},
+		{
+			name: "mission lease", pattern: "SELECT lease_json FROM mission_leases", arg: "lease-1", column: "lease_json",
+			call: func(store *PostgresStore) error { _, err := store.GetMissionLease("lease-1"); return err },
+		},
+		{
+			name: "authority negotiation", pattern: "SELECT negotiation_json FROM authority_negotiations", arg: "negotiation-1", column: "negotiation_json",
+			call: func(store *PostgresStore) error { _, err := store.GetAuthorityNegotiation("negotiation-1"); return err },
+		},
+		{
+			name: "containment rule", pattern: "SELECT rule_json FROM containment_rules", arg: "rule-1", column: "rule_json",
+			call: func(store *PostgresStore) error { _, err := store.GetContainmentRule("rule-1"); return err },
+		},
+		{
+			name: "github repository binding", pattern: "SELECT binding_json FROM github_repository_bindings", arg: "gh-1", column: "binding_json",
+			call: func(store *PostgresStore) error { _, err := store.GetGitHubRepositoryBinding("gh-1"); return err },
+		},
+		{
+			name: "github webhook delivery", pattern: "SELECT delivery_json FROM github_webhook_deliveries", arg: "delivery-1", column: "delivery_json",
+			call: func(store *PostgresStore) error { _, err := store.GetGitHubWebhookDelivery("delivery-1"); return err },
+		},
+		{
+			name: "okta app binding", pattern: "SELECT binding_json FROM okta_app_bindings", arg: "okta-1", column: "binding_json",
+			call: func(store *PostgresStore) error { _, err := store.GetOktaAppBinding("okta-1"); return err },
+		},
+		{
+			name: "entra app registration", pattern: "SELECT registration_json FROM entra_app_registrations", arg: "entra-1", column: "registration_json",
+			call: func(store *PostgresStore) error { _, err := store.GetEntraAppRegistration("entra-1"); return err },
+		},
+		{
+			name: "slack workspace binding", pattern: "SELECT binding_json FROM slack_workspace_bindings", arg: "slack-1", column: "binding_json",
+			call: func(store *PostgresStore) error { _, err := store.GetSlackWorkspaceBinding("slack-1"); return err },
+		},
+		{
+			name: "atlassian site binding", pattern: "SELECT binding_json FROM atlassian_site_bindings", arg: "atlassian-1", column: "binding_json",
+			call: func(store *PostgresStore) error { _, err := store.GetAtlassianSiteBinding("atlassian-1"); return err },
+		},
+		{
+			name: "salesforce org binding", pattern: "SELECT binding_json FROM salesforce_org_bindings", arg: "salesforce-1", column: "binding_json",
+			call: func(store *PostgresStore) error { _, err := store.GetSalesforceOrgBinding("salesforce-1"); return err },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name+"/query", func(t *testing.T) {
+			store, mock, cleanup := newMockPostgresStore(t)
+			defer cleanup()
+			mock.ExpectQuery(tc.pattern).WithArgs(tc.arg).WillReturnError(errors.New("query failed"))
+			if err := tc.call(store); err == nil {
+				t.Fatalf("expected query error")
+			}
+		})
+		t.Run(tc.name+"/malformed_json", func(t *testing.T) {
+			store, mock, cleanup := newMockPostgresStore(t)
+			defer cleanup()
+			mock.ExpectQuery(tc.pattern).
+				WithArgs(tc.arg).
+				WillReturnRows(sqlmock.NewRows([]string{tc.column}).AddRow([]byte("{")))
+			if err := tc.call(store); err == nil {
+				t.Fatalf("expected malformed JSON error")
+			}
+		})
+	}
+}
+
+func TestPostgresStoreSaveAndUpdateErrorBranches(t *testing.T) {
+	saveCases := []struct {
+		name    string
+		pattern string
+		call    func(*PostgresStore) error
+	}{
+		{"agent identity", "INSERT INTO agent_identities", func(store *PostgresStore) error { return store.SaveAgentIdentity(sampleAgentIdentity()) }},
+		{"agent nonce", "INSERT INTO agent_nonces", func(store *PostgresStore) error {
+			return store.SaveAgentNonce(mission.AgentNonce{AgentID: "agent-1", Nonce: "nonce", RequestHash: "hash", SeenAt: testUnitNow()})
+		}},
+		{"proposal", "INSERT INTO mission_proposals", func(store *PostgresStore) error { return store.SaveProposal(sampleProposal()) }},
+		{"mission", "INSERT INTO missions", func(store *PostgresStore) error { return store.SaveMission(sampleMission()) }},
+		{"expansion request", "INSERT INTO expansion_requests", func(store *PostgresStore) error { return store.SaveExpansionRequest(sampleExpansionRequest()) }},
+		{"evaluation evidence", "INSERT INTO evaluation_evidence", func(store *PostgresStore) error { return store.SaveEvaluationEvidence(sampleEvaluationEvidence()) }},
+		{"tool contract", "INSERT INTO tool_contracts", func(store *PostgresStore) error { return store.SaveToolContract(sampleToolContract()) }},
+		{"projection", "INSERT INTO projections", func(store *PostgresStore) error { return store.SaveProjection(sampleProjection()) }},
+		{"mission lease", "INSERT INTO mission_leases", func(store *PostgresStore) error { return store.SaveMissionLease(sampleMissionLease()) }},
+		{"approval rule", "INSERT INTO approval_rules", func(store *PostgresStore) error { return store.SaveApprovalRule(sampleApprovalRule()) }},
+		{"approval record", "INSERT INTO approval_records", func(store *PostgresStore) error { return store.SaveApprovalRecord(sampleApprovalRecord()) }},
+		{"authority negotiation", "INSERT INTO authority_negotiations", func(store *PostgresStore) error { return store.SaveAuthorityNegotiation(sampleAuthorityNegotiation()) }},
+		{"containment rule", "INSERT INTO containment_rules", func(store *PostgresStore) error { return store.SaveContainmentRule(sampleContainmentRule()) }},
+		{"github repository binding", "INSERT INTO github_repository_bindings", func(store *PostgresStore) error {
+			return store.SaveGitHubRepositoryBinding(sampleGitHubRepositoryBinding())
+		}},
+		{"github webhook delivery", "INSERT INTO github_webhook_deliveries", func(store *PostgresStore) error {
+			return store.SaveGitHubWebhookDelivery(sampleGitHubWebhookDelivery())
+		}},
+		{"okta app binding", "INSERT INTO okta_app_bindings", func(store *PostgresStore) error { return store.SaveOktaAppBinding(sampleOktaAppBinding()) }},
+		{"entra app registration", "INSERT INTO entra_app_registrations", func(store *PostgresStore) error { return store.SaveEntraAppRegistration(sampleEntraAppRegistration()) }},
+		{"slack workspace binding", "INSERT INTO slack_workspace_bindings", func(store *PostgresStore) error {
+			return store.SaveSlackWorkspaceBinding(sampleSlackWorkspaceBinding())
+		}},
+		{"atlassian site binding", "INSERT INTO atlassian_site_bindings", func(store *PostgresStore) error { return store.SaveAtlassianSiteBinding(sampleAtlassianSiteBinding()) }},
+		{"salesforce org binding", "INSERT INTO salesforce_org_bindings", func(store *PostgresStore) error { return store.SaveSalesforceOrgBinding(sampleSalesforceOrgBinding()) }},
+	}
+	for _, tc := range saveCases {
+		t.Run("save/"+tc.name, func(t *testing.T) {
+			store, mock, cleanup := newMockPostgresStore(t)
+			defer cleanup()
+			mock.ExpectExec(tc.pattern).WillReturnError(errors.New("database unavailable"))
+			if err := tc.call(store); err == nil {
+				t.Fatalf("expected save error")
+			}
+		})
+	}
+
+	updateCases := []struct {
+		name    string
+		pattern string
+		call    func(*PostgresStore) error
+	}{
+		{"agent identity", "UPDATE agent_identities SET", func(store *PostgresStore) error { return store.UpdateAgentIdentity(sampleAgentIdentity()) }},
+		{"mission", "UPDATE missions SET", func(store *PostgresStore) error { return store.UpdateMission(sampleMission()) }},
+		{"expansion request", "UPDATE expansion_requests SET", func(store *PostgresStore) error { return store.UpdateExpansionRequest(sampleExpansionRequest()) }},
+		{"projection", "UPDATE projections SET", func(store *PostgresStore) error { return store.UpdateProjection(sampleProjection()) }},
+		{"mission lease", "UPDATE mission_leases SET", func(store *PostgresStore) error { return store.UpdateMissionLease(sampleMissionLease()) }},
+		{"containment rule", "UPDATE containment_rules SET", func(store *PostgresStore) error { return store.UpdateContainmentRule(sampleContainmentRule()) }},
+		{"github repository binding", "UPDATE github_repository_bindings", func(store *PostgresStore) error {
+			return store.UpdateGitHubRepositoryBinding(sampleGitHubRepositoryBinding())
+		}},
+		{"okta app binding", "UPDATE okta_app_bindings", func(store *PostgresStore) error { return store.UpdateOktaAppBinding(sampleOktaAppBinding()) }},
+		{"entra app registration", "UPDATE entra_app_registrations", func(store *PostgresStore) error {
+			return store.UpdateEntraAppRegistration(sampleEntraAppRegistration())
+		}},
+		{"slack workspace binding", "UPDATE slack_workspace_bindings", func(store *PostgresStore) error {
+			return store.UpdateSlackWorkspaceBinding(sampleSlackWorkspaceBinding())
+		}},
+		{"atlassian site binding", "UPDATE atlassian_site_bindings SET", func(store *PostgresStore) error {
+			return store.UpdateAtlassianSiteBinding(sampleAtlassianSiteBinding())
+		}},
+		{"salesforce org binding", "UPDATE salesforce_org_bindings SET", func(store *PostgresStore) error {
+			return store.UpdateSalesforceOrgBinding(sampleSalesforceOrgBinding())
+		}},
+	}
+	for _, tc := range updateCases {
+		t.Run("update/"+tc.name+"/db_error", func(t *testing.T) {
+			store, mock, cleanup := newMockPostgresStore(t)
+			defer cleanup()
+			mock.ExpectExec(tc.pattern).WillReturnError(errors.New("database unavailable"))
+			if err := tc.call(store); err == nil {
+				t.Fatalf("expected update error")
+			}
+		})
+		t.Run("update/"+tc.name+"/not_found", func(t *testing.T) {
+			store, mock, cleanup := newMockPostgresStore(t)
+			defer cleanup()
+			mock.ExpectExec(tc.pattern).WillReturnResult(sqlmock.NewResult(0, 0))
+			if err := tc.call(store); !errors.Is(err, mission.ErrNotFound) {
+				t.Fatalf("update err = %v, want ErrNotFound", err)
+			}
+		})
 	}
 }
 

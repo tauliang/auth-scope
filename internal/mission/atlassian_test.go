@@ -1,6 +1,10 @@
 package mission
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestAtlassianMissionAdapterJiraAndConfluenceAuthorization(t *testing.T) {
 	service := testService()
@@ -114,6 +118,62 @@ func TestAtlassianMissionAdapterConversions(t *testing.T) {
 	actor := missionActorFromAtlassian(AtlassianActor{AgentInstanceID: "inst_123", ClientID: "agent", KeyThumbprint: "thumb"})
 	if actor.AgentInstanceID != "inst_123" || actor.ClientID != "agent" || actor.KeyThumbprint != "thumb" {
 		t.Fatalf("unexpected actor conversion: %#v", actor)
+	}
+}
+
+func TestSignedAtlassianJiraAPIBindsAgentIdentity(t *testing.T) {
+	service := testService()
+	publicKey, privateKey := testAgentKeypair(t)
+	registered, err := service.RegisterAgent(RegisterAgentRequest{
+		TenantID:  "demo",
+		Agent:     Agent{Provider: "https://agents.example.com", ClientID: "research-agent", InstanceID: "inst_123"},
+		PublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+	mission := approveAtlassianMission(t, service)
+	if _, err := service.CreateAtlassianSiteBinding(CreateAtlassianSiteBindingRequest{
+		TenantID:           "demo",
+		SiteURL:            "https://acme.atlassian.net",
+		MissionRef:         mission.MissionRef,
+		JiraProjectKeys:    []string{"FIN"},
+		AllowedJiraActions: []string{AtlassianJiraActionTransitionIssue},
+		RequiredGroups:     []string{"Mission Operators"},
+		AllowedSubjects:    []string{"acc_123"},
+	}, Principal{Subject: "admin@example.com", Issuer: "https://idp.example.com"}); err != nil {
+		t.Fatalf("CreateAtlassianSiteBinding: %v", err)
+	}
+
+	body := AuthorizeAtlassianJiraIssueActionRequest{
+		TenantID:   "demo",
+		MissionRef: mission.MissionRef,
+		SiteURL:    "https://acme.atlassian.net",
+		IssueKey:   "FIN-77",
+		Action:     AtlassianJiraActionTransitionIssue,
+		AccountID:  "acc_123",
+		Subject:    "acc_123",
+		Groups:     []string{"Mission Operators"},
+		Context:    map[string]any{"finance.close.status": "open", "risk": "low", "reversible": true},
+		Evaluation: &AtlassianEvaluationRequest{
+			MissionVersionSeen: mission.MissionVersion,
+			Action: AtlassianEvaluationAction{
+				Type:      "jira_issue",
+				Resource:  AtlassianEvaluationActionResource{Type: "jira_issue", ID: "FIN-77"},
+				Operation: "transition",
+			},
+		},
+	}
+	router := NewHandler(service).Routes()
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, signedJSONRequest(t, http.MethodPost, "/v1/integrations/atlassian/jira/issues/authorize", body, registered.AgentID, privateKey, "nonce-atlassian-jira"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("signed Atlassian authorize status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp AtlassianActionAuthorizationResponse
+	decodeTestJSON(t, rec.Body.Bytes(), &resp)
+	if !resp.Accepted || resp.Evaluation == nil || resp.Evaluation.Decision != string(DecisionAllow) {
+		t.Fatalf("signed Atlassian response = %#v, want accepted allow with evaluation", resp)
 	}
 }
 

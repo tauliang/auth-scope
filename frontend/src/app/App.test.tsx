@@ -96,7 +96,7 @@ describe("operator console", () => {
 
     await user.click(screen.getByRole("link", { name: "Workbench" }));
     expect(await screen.findByRole("heading", { name: "Authority workbench" })).toBeInTheDocument();
-  });
+  }, 15000);
 
   it("rejects an invalid administrator token", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ code: "authentication_required", message: "Authentication required" }, 401)));

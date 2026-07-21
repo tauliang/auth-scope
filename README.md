@@ -12,6 +12,81 @@
 - **Operator experience:** Go HTTP API, in-memory and PostgreSQL-backed stores, embedded PostgreSQL migrations, React operator console, same-origin Docker Compose deployment with nginx `/api` proxy, OpenAPI contract, demo scripts, and a governed coding-agent workbench sample.
 - **Discovery and interoperability:** well-known Mission Authority and AuthZEN discovery documents plus generated frontend TypeScript declarations from `openapi/auth-scope-v1.yaml`.
 
+## Installation Instructions, Supported Platforms, And Testing
+
+### Installation Instructions
+
+The fastest installation path is Docker Compose, which starts PostgreSQL, the Go API, and the React operator console with one command:
+
+```sh
+docker compose up --build
+```
+
+After the stack starts, open `http://localhost:3000` and sign in with the development token `dev-compose-admin-alice`. The API is available at `http://localhost:8080`.
+
+For local development without Docker, install:
+
+- Go, using the version declared in [`go.mod`](go.mod).
+- Node.js and pnpm, using the package manager version declared in [`frontend/package.json`](frontend/package.json).
+- PostgreSQL, only when testing the persistent store; otherwise the API can run with the in-memory store.
+
+Then run the API and frontend in separate terminals:
+
+```sh
+go run ./cmd/auth-scope
+```
+
+```sh
+cd frontend
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+### Supported Platforms
+
+Auth Scope is developed for containerized and local development on:
+
+- macOS with Docker Desktop or local Go/Node tooling.
+- Linux with Docker Engine/Compose or local Go/Node tooling.
+- Windows through WSL2 or Docker Desktop.
+
+The backend is a Go service and should run anywhere Go supports the target architecture. The operator console is a browser-based React application tested against Chromium through Playwright. Production deployments should use PostgreSQL and explicit administrator credentials instead of the development in-memory store and demo tokens.
+
+### Instructions For Testing
+
+Run the backend test suite:
+
+```sh
+go test ./...
+```
+
+Run backend coverage:
+
+```sh
+go test ./... -coverprofile=coverage.out
+go tool cover -func=coverage.out
+```
+
+Run frontend validation:
+
+```sh
+cd frontend
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test:coverage
+pnpm build
+pnpm e2e
+```
+
+Validate the Docker Compose configuration:
+
+```sh
+docker compose config --quiet
+```
+
+Before opening or updating a PR, run the checks relevant to the files you changed. Frontend coverage enforces an 80% minimum for statements, branches, functions, and lines.
+
 ## Quick Start
 
 ### One-command stack

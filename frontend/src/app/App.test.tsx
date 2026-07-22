@@ -20,6 +20,7 @@ const agent = { agent_id: "agent-1", tenant_id: "demo", agent: mission.agent, pu
 const containment = { rule_id: "rule-1", tenant_id: "demo", target_type: "mission", target_id: mission.mission_ref, status: "active", reason: "Incident review", created_at: now };
 const projection = { projection_id: "projection-1", mission_ref: mission.mission_ref, mission_version: 1, tenant_id: "demo", type: "oauth_claims", actor: { agent_instance_id: "inst_123", client_id: "research-agent" }, status: "active", issued_at: now, expires_at: "2026-07-18T12:05:00Z" };
 const event = { event_id: "event-1", mission_ref: mission.mission_ref, tenant_id: "demo", type: "mission.approved", occurred_at: now, payload: { proposal_id: "proposal-1" } };
+const policyBundle = { bundle_id: "policy-1", tenant_id: "demo", version: "mission-policy/custom", name: "Enterprise guardrail", status: "active", rules: [{ rule_id: "guardrail-001", effect: "deny" }], bundle_hash: "sha256:test", created_at: now };
 
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "x-request-id": "req-ui" } });
@@ -45,6 +46,7 @@ function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
   if (path === `/v1/containment-rules/${containment.rule_id}`) return Promise.resolve(response(containment));
   if (path === `/v1/containment-rules/${containment.rule_id}/blast-radius`) return Promise.resolve(response({ rule: containment, missions: [mission], agents: [agent], projections: [projection] }));
   if (path === "/v1/approval-rules") return Promise.resolve(response({ approval_rules: [{ rule_id: "approval-rule-1", tenant_id: "demo", applies_to: "expansion", required_approvals: 2, allowed_subjects: ["alice@example.com", "bob@example.com"], created_at: now }] }));
+  if (path === "/v1/policy-bundles") return Promise.resolve(response({ policy_bundles: [policyBundle] }));
   if (path === "/v1/tool-contracts") return Promise.resolve(response({ items: [{ tool_name: "drive.read", resource_type: "drive_folder", operation: "read", required_context: ["finance.close.status"] }], total: 1 }));
   if (path === "/v1/projections") return Promise.resolve(response({ items: [projection], total: 1 }));
   if (path === "/v1/events") return Promise.resolve(response({ items: [event], total: 1 }));

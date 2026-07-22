@@ -185,6 +185,71 @@ export interface ApprovalRule {
   created_at: string;
 }
 
+export type PolicyBundleStatus = "draft" | "active" | "archived";
+export type PolicyEffect = "allow" | "deny" | "require_approval" | "require_expansion" | "allow_with_constraints";
+
+export interface PolicyRuleMatch {
+  action_types?: string[];
+  operations?: string[];
+  resource_types?: string[];
+  resource_ids?: string[];
+  agent_client_ids?: string[];
+  principal_subjects?: string[];
+  base_decisions?: string[];
+}
+
+export interface PolicyRule {
+  rule_id: string;
+  description?: string;
+  priority?: number;
+  disabled?: boolean;
+  effect: PolicyEffect;
+  match?: PolicyRuleMatch;
+  conditions?: Condition[];
+  reason_codes?: string[];
+  human_reason?: string;
+  constraints?: Record<string, unknown>;
+}
+
+export interface PolicyBundle {
+  bundle_id: string;
+  tenant_id?: string;
+  version: string;
+  name?: string;
+  description?: string;
+  status: PolicyBundleStatus;
+  combining_algorithm?: "first_applicable";
+  rules: PolicyRule[];
+  bundle_hash?: string;
+  signature?: string;
+  created_by?: Principal;
+  activated_by?: Principal;
+  created_at?: string;
+  activated_at?: string;
+}
+
+export interface CreatePolicyBundleRequest {
+  tenant_id?: string;
+  version: string;
+  name?: string;
+  description?: string;
+  combining_algorithm?: "first_applicable";
+  rules: PolicyRule[];
+}
+
+export interface SimulatePolicyBundleResponse {
+  bundle_id: string;
+  tenant_id?: string;
+  policy_version: string;
+  bundle_hash?: string;
+  original_decision: string;
+  decision: string;
+  reason_codes?: string[];
+  human_reason?: string;
+  constraints?: Record<string, unknown>;
+  rule_results?: Array<{ rule_id: string; effect?: string; matched: boolean; applied?: boolean; reason_codes?: string[] }>;
+}
+
 export interface ToolContract {
   tool_name: string;
   resource_type: string;

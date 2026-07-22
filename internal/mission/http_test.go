@@ -87,6 +87,9 @@ func TestAPIBodyHandlersRejectMalformedJSON(t *testing.T) {
 		{http.MethodPost, "/v1/missions/mref-1/leases"},
 		{http.MethodPost, "/v1/leases/lease-1/refresh"},
 		{http.MethodPost, "/v1/approval-rules"},
+		{http.MethodPost, "/v1/policy-bundles"},
+		{http.MethodPost, "/v1/policy-bundles/bundle-1/activate"},
+		{http.MethodPost, "/v1/policy-bundles/bundle-1/simulate"},
 		{http.MethodPost, "/v1/containment-rules"},
 		{http.MethodPost, "/v1/containment-rules/rule-1/lift"},
 		{http.MethodPost, "/v1/integrations/github/repositories"},
@@ -334,6 +337,7 @@ func TestAPIListHandlersMapServiceErrors(t *testing.T) {
 		"/v1/projections",
 		"/v1/events",
 		"/v1/approval-rules",
+		"/v1/policy-bundles",
 		"/v1/containment-rules",
 		"/v1/integrations/github/repositories",
 		"/v1/integrations/okta/app-bindings",
@@ -375,6 +379,7 @@ func TestAPICreateAndRuntimeHandlersMapServiceErrors(t *testing.T) {
 		{"/v1/missions/mref-1/leases", CreateLeaseRequest{}},
 		{"/v1/leases/lease-1/refresh", RefreshLeaseRequest{}},
 		{"/v1/approval-rules", ApprovalRule{}},
+		{"/v1/policy-bundles", CreatePolicyBundleRequest{}},
 		{"/v1/containment-rules", ContainmentRule{}},
 		{"/v1/integrations/github/repositories", CreateGitHubRepositoryBindingRequest{}},
 		{"/v1/integrations/okta/app-bindings", CreateOktaAppBindingRequest{}},
@@ -1088,6 +1093,10 @@ func (s *erroringHandlerService) ListEvents(ListQuery) (CollectionPage[Event], e
 }
 
 func (s *erroringHandlerService) ListApprovalRules() ([]ApprovalRule, error) {
+	return nil, s.err
+}
+
+func (s *erroringHandlerService) ListPolicyBundles() ([]PolicyBundle, error) {
 	return nil, s.err
 }
 

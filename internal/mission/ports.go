@@ -34,6 +34,14 @@ type GovernanceStore interface {
 	ListToolContracts() ([]ToolContract, error)
 }
 
+type PolicyStore interface {
+	SavePolicyBundle(PolicyBundle) error
+	GetPolicyBundle(string) (PolicyBundle, error)
+	ListPolicyBundles() ([]PolicyBundle, error)
+	ActivatePolicyBundle(PolicyBundle) error
+	GetActivePolicyBundle(string) (PolicyBundle, error)
+}
+
 type ProjectionStore interface {
 	SaveProjection(Projection) error
 	GetProjection(string) (Projection, error)

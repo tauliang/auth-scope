@@ -28,6 +28,7 @@ type Service struct {
 	approvals           ApprovalStore
 	negotiations        NegotiationStore
 	containments        ContainmentStore
+	policies            PolicyStore
 	expansionDecisions  ExpansionDecisionStore
 	proposalApprovals   ProposalApprovalStore
 	events              EventStore
@@ -53,6 +54,7 @@ type ServiceDependencies struct {
 	Approvals           ApprovalStore
 	Negotiations        NegotiationStore
 	Containments        ContainmentStore
+	Policies            PolicyStore
 	ExpansionDecisions  ExpansionDecisionStore
 	ProposalApprovals   ProposalApprovalStore
 	Events              EventStore
@@ -87,6 +89,7 @@ func NewServiceWithArtifactKey(store Store, clock Clock, artifactKey []byte) *Se
 		Approvals:          store,
 		Negotiations:       store,
 		Containments:       store,
+		Policies:           store,
 		ExpansionDecisions: store,
 		ProposalApprovals:  store,
 		Events:             store,
@@ -116,6 +119,11 @@ func NewServiceWithDependencies(dependencies ServiceDependencies, clock Clock) *
 			dependencies.ProposalApprovals = approvals
 		}
 	}
+	if dependencies.Policies == nil {
+		if policies, ok := dependencies.Governance.(PolicyStore); ok {
+			dependencies.Policies = policies
+		}
+	}
 	if len(dependencies.ArtifactKey) == 0 {
 		dependencies.ArtifactKey = decisionArtifactKeyFromEnv()
 	}
@@ -130,6 +138,7 @@ func NewServiceWithDependencies(dependencies ServiceDependencies, clock Clock) *
 		approvals:           dependencies.Approvals,
 		negotiations:        dependencies.Negotiations,
 		containments:        dependencies.Containments,
+		policies:            dependencies.Policies,
 		expansionDecisions:  dependencies.ExpansionDecisions,
 		proposalApprovals:   dependencies.ProposalApprovals,
 		events:              dependencies.Events,
@@ -544,6 +553,10 @@ func (s *Service) finalizeEvaluation(mission Mission, req EvaluateRequest, resp 
 }
 
 func (s *Service) finalizeEvaluationWithEvidence(mission Mission, req EvaluateRequest, resp EvaluateResponse, now time.Time, conditionResults []ConditionEvaluation, expansionID string) (EvaluateResponse, error) {
+	resp, policyEvaluation, err := s.activePolicyEvaluation(mission, req, resp)
+	if err != nil {
+		return EvaluateResponse{}, err
+	}
 	if resp.MissionRef == "" {
 		resp.MissionRef = mission.MissionRef
 	}
@@ -552,11 +565,18 @@ func (s *Service) finalizeEvaluationWithEvidence(mission Mission, req EvaluateRe
 	}
 	evidenceID := newID("mevd")
 	contextHash := HashDecisionContext(req.Context)
+	policyVersion := policyEvaluation.PolicyVersion
+	if policyVersion == "" {
+		policyVersion = DefaultPolicyVersionID
+	}
 	payload := DecisionArtifactPayload{
 		ArtifactID:         newID("mdar"),
 		MissionRef:         resp.MissionRef,
 		MissionVersion:     resp.MissionVersion,
-		PolicyVersion:      DefaultPolicyVersionID,
+		PolicyVersion:      policyVersion,
+		PolicyBundleID:     policyEvaluation.BundleID,
+		PolicyBundleHash:   policyEvaluation.BundleHash,
+		PolicyRuleIDs:      appliedPolicyRuleIDs(policyEvaluation.RuleResults),
 		EvidenceID:         evidenceID,
 		ExpansionRequestID: expansionID,
 		Decision:           resp.Decision,
@@ -576,13 +596,16 @@ func (s *Service) finalizeEvaluationWithEvidence(mission Mission, req EvaluateRe
 		MissionRef:       resp.MissionRef,
 		MissionVersion:   resp.MissionVersion,
 		TenantID:         mission.TenantID,
-		PolicyVersion:    DefaultPolicyVersionID,
+		PolicyVersion:    policyVersion,
+		PolicyBundleID:   policyEvaluation.BundleID,
+		PolicyBundleHash: policyEvaluation.BundleHash,
 		Actor:            req.Actor,
 		Action:           req.Action,
 		ContextHash:      contextHash,
 		Decision:         resp.Decision,
 		ReasonCodes:      resp.ReasonCodes,
 		ConditionResults: conditionResults,
+		PolicyResults:    policyEvaluation.RuleResults,
 		Artifact:         artifact,
 		CreatedAt:        now,
 	}); err != nil {
@@ -594,12 +617,22 @@ func (s *Service) finalizeEvaluationWithEvidence(mission Mission, req EvaluateRe
 		TenantID:      mission.TenantID,
 		Type:          "mission.evaluated",
 		Actor:         map[string]any{"agent_instance_id": req.Actor.AgentInstanceID, "client_id": req.Actor.ClientID, "key_thumbprint": req.Actor.KeyThumbprint},
-		Payload:       map[string]any{"decision": resp.Decision, "decision_artifact": artifact, "evidence_id": evidenceID, "policy_version": DefaultPolicyVersionID, "expansion_request_id": expansionID, "operation": req.Action.Operation, "resource_type": req.Action.Resource.Type, "resource_id": req.Action.Resource.ID, "reason_codes": resp.ReasonCodes},
+		Payload:       map[string]any{"decision": resp.Decision, "decision_artifact": artifact, "evidence_id": evidenceID, "policy_version": policyVersion, "policy_bundle_id": policyEvaluation.BundleID, "policy_bundle_hash": policyEvaluation.BundleHash, "policy_rule_ids": appliedPolicyRuleIDs(policyEvaluation.RuleResults), "expansion_request_id": expansionID, "operation": req.Action.Operation, "resource_type": req.Action.Resource.Type, "resource_id": req.Action.Resource.ID, "reason_codes": resp.ReasonCodes},
 		VersionBefore: mission.Version,
 		VersionAfter:  mission.Version,
 		OccurredAt:    now,
 	})
 	return resp, nil
+}
+
+func appliedPolicyRuleIDs(results []PolicyRuleResult) []string {
+	ids := make([]string, 0, len(results))
+	for _, result := range results {
+		if result.Applied {
+			ids = append(ids, result.RuleID)
+		}
+	}
+	return ids
 }
 
 func (s *Service) transitionCascade(mission Mission, state State, reason string, req StateChangeRequest) (Mission, error) {

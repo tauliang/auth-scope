@@ -6,8 +6,8 @@
 
 - **Mission authority lifecycle:** proposals, approvals, synchronous evaluation, risky-action expansion requests, safe subset negotiation, resume checks, strict-subset delegation, completion, revocation, and cascade semantics.
 - **Agent identity and runtime enforcement:** agent registry, Ed25519 request signatures, nonce replay protection, AuthZEN-compatible authorization, MCP-style tool contracts, signed external projections, short-lived mission leases, and fail-closed production startup checks.
-- **Governance controls:** multi-approver expansion rules, containment rules, blast-radius inspection, tenant-scoped administrator credentials, and runtime blocks for evaluation, delegation, expansion, projections, leases, and resume.
-- **Evidence and audit:** signed decision artifacts, stored policy evidence, immutable event history, Server-Sent Events streaming, transactional outbox publishing, and mission/agent lineage graphs.
+- **Governance controls:** versioned policy-as-code bundles with dry-run simulation, multi-approver expansion rules, containment rules, blast-radius inspection, tenant-scoped administrator credentials, and runtime blocks for evaluation, delegation, expansion, projections, leases, and resume.
+- **Evidence and audit:** signed decision artifacts, stored policy evidence with applied policy bundle/rule IDs, immutable event history, Server-Sent Events streaming, transactional outbox publishing, and mission/agent lineage graphs.
 - **Identity and workflow integrations:** GitHub repository and check-run hooks for coding-agent PR governance, Okta application/group authority resolution, Microsoft Entra app registration/group/role authority resolution, Slack workspace/message-action authorization, Atlassian Jira/Confluence action authorization, and Salesforce CRM record-action authorization.
 - **Operator experience:** Go HTTP API, in-memory and PostgreSQL-backed stores, embedded PostgreSQL migrations, React operator console, same-origin Docker Compose deployment with nginx `/api` proxy, OpenAPI contract, demo scripts, and a governed coding-agent workbench sample.
 - **Discovery and interoperability:** well-known Mission Authority and AuthZEN discovery documents plus generated frontend TypeScript declarations from `openapi/auth-scope-v1.yaml`.
@@ -314,6 +314,11 @@ POST /v1/leases/{lease_id}/refresh
 POST /v1/approval-rules
 GET  /v1/approval-rules
 POST /v1/expansion-requests/{expansion_id}/approvals
+POST /v1/policy-bundles
+GET  /v1/policy-bundles
+GET  /v1/policy-bundles/{bundle_id}
+POST /v1/policy-bundles/{bundle_id}/activate
+POST /v1/policy-bundles/{bundle_id}/simulate
 POST /v1/containment-rules
 GET  /v1/containment-rules
 GET  /v1/containment-rules/{rule_id}
@@ -529,6 +534,46 @@ curl -s http://localhost:8080/v1/expansion-requests/{expansion_id}/approvals \
   -H "authorization: Bearer ${ADMIN_TOKEN}" \
   -H 'content-type: application/json' \
   -d '{"reason": "reviewed and approved"}'
+```
+
+Create and activate a policy-as-code bundle that blocks high-risk external sends. Active bundles are evaluated during mission decisions and the applied bundle/rule IDs are written into decision artifacts and evidence:
+
+```sh
+curl -s http://localhost:8080/v1/policy-bundles \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
+  -d '{
+    "tenant_id": "demo",
+    "version": "mission-policy/high-risk-send-v1",
+    "name": "High-risk external-send guardrail",
+    "rules": [{
+      "rule_id": "deny-high-risk-external-send",
+      "priority": 10,
+      "effect": "deny",
+      "match": {"operations": ["send_external"], "base_decisions": ["allow"]},
+      "conditions": [{"id": "high-risk", "expression": "context.risk == \"high\""}],
+      "reason_codes": ["POLICY_HIGH_RISK_EXTERNAL_SEND"],
+      "human_reason": "High-risk external sends are blocked by enterprise policy."
+    }]
+  }'
+
+curl -s http://localhost:8080/v1/policy-bundles/{bundle_id}/activate \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
+  -d '{"reason": "approved enterprise guardrail"}'
+
+curl -s http://localhost:8080/v1/policy-bundles/{bundle_id}/simulate \
+  -H "authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'content-type: application/json' \
+  -d '{
+    "mission_ref": "{mission_ref}",
+    "base_decision": "allow",
+    "evaluation": {
+      "actor": {"agent_instance_id": "inst_123", "client_id": "research-agent"},
+      "action": {"type": "tool_call", "resource": {"type": "email", "id": "board"}, "operation": "send_external"},
+      "context": {"risk": "high"}
+    }
+  }'
 ```
 
 Gateways can subscribe to a Server-Sent Events snapshot stream:
@@ -895,4 +940,4 @@ curl -s http://localhost:8080/access/v1/evaluation \
 
 ## MVP Boundary
 
-The MVP currently includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, GitHub repository/check-run integration hooks, Okta app/group authority-context integration hooks, Microsoft Entra app/group authority-context integration hooks, Slack workspace/message-action integration hooks, Atlassian Jira/Confluence site/action integration hooks, and Salesforce org/record-action integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, adding live JWKS/introspection verification where the gateway does not already verify identity-provider tokens or provider-specific user/workspace/site facts, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.
+The MVP currently includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, versioned policy-as-code bundles with simulation, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, GitHub repository/check-run integration hooks, Okta app/group authority-context integration hooks, Microsoft Entra app/group/role authority-context integration hooks, Slack workspace/message-action integration hooks, Atlassian Jira/Confluence site/action integration hooks, and Salesforce org/record-action integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, adding live JWKS/introspection verification where the gateway does not already verify identity-provider tokens or provider-specific user/workspace/site facts, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.

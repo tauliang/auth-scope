@@ -45,6 +45,7 @@ func TestMigrationNamesAreEmbeddedInOrder(t *testing.T) {
 		"migrations/011_slack_integrations.up.sql",
 		"migrations/012_atlassian_integrations.up.sql",
 		"migrations/013_salesforce_integrations.up.sql",
+		"migrations/014_policy_bundles.up.sql",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("MigrationNames() = %#v, want %#v", got, want)

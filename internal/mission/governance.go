@@ -64,12 +64,15 @@ type EvaluationEvidence struct {
 	MissionVersion   int                   `json:"mission_version"`
 	TenantID         string                `json:"tenant_id,omitempty"`
 	PolicyVersion    string                `json:"policy_version"`
+	PolicyBundleID   string                `json:"policy_bundle_id,omitempty"`
+	PolicyBundleHash string                `json:"policy_bundle_hash,omitempty"`
 	Actor            Actor                 `json:"actor"`
 	Action           Action                `json:"action"`
 	ContextHash      string                `json:"context_hash"`
 	Decision         Decision              `json:"decision"`
 	ReasonCodes      []string              `json:"reason_codes,omitempty"`
 	ConditionResults []ConditionEvaluation `json:"condition_results,omitempty"`
+	PolicyResults    []PolicyRuleResult    `json:"policy_results,omitempty"`
 	Artifact         string                `json:"decision_artifact"`
 	CreatedAt        time.Time             `json:"created_at"`
 }

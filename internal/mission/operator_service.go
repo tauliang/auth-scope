@@ -37,10 +37,11 @@ func (s *Service) OperationsSummary(query ListQuery) (OperationsSummary, error) 
 	summary := OperationsSummary{
 		MissionsByState: make(map[State]int),
 		ServiceCapabilities: map[string]bool{
-			"approvals":   true,
-			"containment": true,
-			"lineage":     true,
-			"projections": true,
+			"approvals":      true,
+			"containment":    true,
+			"lineage":        true,
+			"policy_as_code": true,
+			"projections":    true,
 		},
 	}
 	for _, item := range missions {

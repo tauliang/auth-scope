@@ -54,6 +54,132 @@ func TestProjectionLifecycleSignsVerifiesAndRevokes(t *testing.T) {
 	}
 }
 
+func TestCredentialBrokerExchangeVerifiesReplayAndRevocation(t *testing.T) {
+	service := testService()
+	mission := approveTestMission(t, service)
+	actor := Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"}
+	resource := &ActionResource{Type: "drive_folder", ID: "board"}
+	projection, err := service.CreateProjection(mission.MissionRef, CreateProjectionRequest{
+		MissionVersionSeen: mission.MissionVersion,
+		Actor:              actor,
+		Type:               ProjectionTypeToolGatewayToken,
+		Scopes:             []string{"drive.read", "drive.write_draft"},
+		Audience:           "tool-gateway",
+		ToolName:           "drive.read",
+		Resource:           resource,
+		Operation:          "read",
+		TTLSeconds:         240,
+	})
+	if err != nil {
+		t.Fatalf("CreateProjection: %v", err)
+	}
+
+	exchanged, err := service.ExchangeProjectionToken(ExchangeProjectionTokenRequest{
+		ProjectionToken: projection.Token,
+		Actor:           actor,
+		Nonce:           "exchange-nonce-1",
+		RequestedScopes: []string{"drive.read"},
+		Audience:        "tool-gateway",
+		ToolName:        "drive.read",
+		Resource:        resource,
+		Operation:       "read",
+		TTLSeconds:      90,
+	})
+	if err != nil {
+		t.Fatalf("ExchangeProjectionToken: %v", err)
+	}
+	if exchanged.AccessToken == "" || exchanged.TokenType != credentialTokenType || exchanged.ExpiresIn != 90 {
+		t.Fatalf("unexpected exchanged credential: %#v", exchanged)
+	}
+	payload, err := VerifyCredentialAccessTokenPayload(exchanged.AccessToken, service.artifactKey)
+	if err != nil {
+		t.Fatalf("VerifyCredentialAccessTokenPayload: %v", err)
+	}
+	if payload.TokenUse != credentialTokenUse || payload.ProjectionID != projection.ProjectionID || payload.Confirmation["agent_instance_id"] != actor.AgentInstanceID {
+		t.Fatalf("credential payload = %#v", payload)
+	}
+	verified := service.VerifyCredentialAccessToken(VerifyCredentialAccessTokenRequest{
+		Token:     exchanged.AccessToken,
+		Actor:     actor,
+		Audience:  "tool-gateway",
+		ToolName:  "drive.read",
+		Resource:  resource,
+		Operation: "read",
+	})
+	if !verified.Valid || verified.Exchange == nil || verified.Exchange.Nonce != "exchange-nonce-1" {
+		t.Fatalf("VerifyCredentialAccessToken = %#v", verified)
+	}
+	if _, err := service.ExchangeProjectionToken(ExchangeProjectionTokenRequest{
+		ProjectionToken: projection.Token,
+		Actor:           actor,
+		Nonce:           "exchange-nonce-1",
+		RequestedScopes: []string{"drive.read"},
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("replayed exchange err = %v, want ErrConflict", err)
+	}
+	wrongTool := service.VerifyCredentialAccessToken(VerifyCredentialAccessTokenRequest{
+		Token:    exchanged.AccessToken,
+		Actor:    actor,
+		ToolName: "drive.write",
+	})
+	if wrongTool.Valid || !strings.Contains(wrongTool.Error, "tool mismatch") {
+		t.Fatalf("wrong tool verification = %#v", wrongTool)
+	}
+	if _, err := service.RevokeProjection(projection.ProjectionID, StateChangeRequest{Reason: "rotation"}); err != nil {
+		t.Fatalf("RevokeProjection: %v", err)
+	}
+	revoked := service.VerifyCredentialAccessToken(VerifyCredentialAccessTokenRequest{Token: exchanged.AccessToken, Actor: actor})
+	if revoked.Valid || !strings.Contains(revoked.Error, "revoked") {
+		t.Fatalf("revoked credential verification = %#v", revoked)
+	}
+}
+
+func TestCredentialBrokerRejectsScopeAndBindingEscalation(t *testing.T) {
+	service := testService()
+	mission := approveTestMission(t, service)
+	actor := Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"}
+	resource := &ActionResource{Type: "drive_folder", ID: "board"}
+	projection, err := service.CreateProjection(mission.MissionRef, CreateProjectionRequest{
+		MissionVersionSeen: mission.MissionVersion,
+		Actor:              actor,
+		Type:               ProjectionTypeOAuthClaims,
+		Scopes:             []string{"drive.read"},
+		Audience:           "oauth",
+		Resource:           resource,
+		Operation:          "read",
+	})
+	if err != nil {
+		t.Fatalf("CreateProjection: %v", err)
+	}
+
+	if _, err := service.ExchangeProjectionToken(ExchangeProjectionTokenRequest{
+		ProjectionToken: projection.Token,
+		Actor:           actor,
+		Nonce:           "scope-escalation",
+		RequestedScopes: []string{"drive.write_draft"},
+	}); err == nil || !strings.Contains(err.Error(), "scopes exceed") {
+		t.Fatalf("scope escalation err = %v", err)
+	}
+	if _, err := service.ExchangeProjectionToken(ExchangeProjectionTokenRequest{
+		ProjectionToken: projection.Token,
+		Actor:           actor,
+		Nonce:           "resource-escalation",
+		RequestedScopes: []string{"drive.read"},
+		Resource:        &ActionResource{Type: "drive_folder", ID: "other"},
+		Operation:       "read",
+	}); err == nil || !strings.Contains(err.Error(), "resource does not match") {
+		t.Fatalf("resource escalation err = %v", err)
+	}
+	if _, err := service.ExchangeProjectionToken(ExchangeProjectionTokenRequest{
+		ProjectionToken: projection.Token,
+		Actor:           Actor{AgentInstanceID: "other", ClientID: "research-agent"},
+		Nonce:           "actor-escalation",
+		RequestedScopes: []string{"drive.read"},
+	}); err == nil || !strings.Contains(err.Error(), "authorized") {
+		t.Fatalf("actor escalation err = %v", err)
+	}
+}
+
 func TestProjectionValidationAndExpiry(t *testing.T) {
 	store := NewMemoryStore()
 	service := NewService(store, fixedClock{now: time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)})

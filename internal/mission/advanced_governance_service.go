@@ -35,8 +35,30 @@ func (s *Service) CreateProjection(ref string, req CreateProjectionRequest) (Pro
 	if claims == nil {
 		claims = projectionClaims(mission)
 	}
+	scopes := projectionRequestedScopes(req.Scopes, claims, mission.AuthorityRegion)
+	audience := projectionAudience(req.Audience, projectionType)
+	toolName := strings.TrimSpace(req.ToolName)
+	resource := cleanActionResource(req.Resource)
+	operation := strings.TrimSpace(req.Operation)
+	if resource != nil || operation != "" {
+		action := Action{Type: "tool_call", Name: toolName, Operation: operation}
+		if resource != nil {
+			action.Resource = *resource
+		}
+		if action.Resource.Type == "" || action.Resource.ID == "" || action.Operation == "" {
+			return ProjectionResponse{}, fmt.Errorf("projection resource.type, resource.id, and operation are required when binding a projection to a tool action")
+		}
+		if !actionInScope(mission.AuthorityRegion, action) {
+			return ProjectionResponse{}, fmt.Errorf("projection action is outside mission authority")
+		}
+	}
 	projectionID := newID("mprj")
 	payload := ProjectionPayload{
+		JTI:            newID("pjti"),
+		Issuer:         "auth-scope",
+		Subject:        req.Actor.AgentInstanceID,
+		Audience:       audience,
+		TokenUse:       "projection_grant",
 		ProjectionID:   projectionID,
 		MissionRef:     mission.MissionRef,
 		MissionVersion: mission.Version,
@@ -45,8 +67,14 @@ func (s *Service) CreateProjection(ref string, req CreateProjectionRequest) (Pro
 		Actor:          req.Actor,
 		Agent:          mission.Agent,
 		AuthorityHash:  HashDecisionContext(map[string]any{"authority_region": mission.AuthorityRegion}),
+		Scopes:         scopes,
+		ToolName:       toolName,
+		Resource:       resource,
+		Operation:      operation,
+		Confirmation:   projectionConfirmation(req.Actor),
 		Claims:         claims,
 		IssuedAt:       now,
+		NotBefore:      now,
 		ExpiresAt:      expiresAt,
 	}
 	token, err := SignProjectionToken(payload, s.artifactKey)
@@ -60,6 +88,11 @@ func (s *Service) CreateProjection(ref string, req CreateProjectionRequest) (Pro
 		TenantID:       mission.TenantID,
 		Type:           projectionType,
 		Actor:          req.Actor,
+		Scopes:         scopes,
+		Audience:       audience,
+		ToolName:       toolName,
+		Resource:       resource,
+		Operation:      operation,
 		Claims:         claims,
 		Token:          token,
 		Status:         ProjectionStatusActive,
@@ -75,7 +108,7 @@ func (s *Service) CreateProjection(ref string, req CreateProjectionRequest) (Pro
 		TenantID:      mission.TenantID,
 		Type:          "mission.projection_created",
 		Actor:         map[string]any{"agent_instance_id": req.Actor.AgentInstanceID, "client_id": req.Actor.ClientID, "key_thumbprint": req.Actor.KeyThumbprint},
-		Payload:       map[string]any{"projection_id": projection.ProjectionID, "projection_type": projection.Type},
+		Payload:       map[string]any{"projection_id": projection.ProjectionID, "projection_type": projection.Type, "scopes": projection.Scopes, "audience": projection.Audience, "tool_name": projection.ToolName, "operation": projection.Operation},
 		VersionBefore: mission.Version,
 		VersionAfter:  mission.Version,
 		OccurredAt:    now,
@@ -123,8 +156,15 @@ func (s *Service) RevokeProjection(id string, req StateChangeRequest) (Projectio
 		return ProjectionStatusResponse{}, err
 	}
 	if projection.Status != ProjectionStatusRevoked {
+		now := s.clock.Now()
 		projection.Status = ProjectionStatusRevoked
-		projection.RevokedAt = s.clock.Now()
+		projection.RevokedAt = now
+		for index := range projection.ExchangeRecords {
+			if projection.ExchangeRecords[index].Status != ProjectionStatusRevoked {
+				projection.ExchangeRecords[index].Status = ProjectionStatusRevoked
+				projection.ExchangeRecords[index].RevokedAt = now
+			}
+		}
 		if err := s.projections.UpdateProjection(projection); err != nil {
 			return ProjectionStatusResponse{}, err
 		}
@@ -134,7 +174,7 @@ func (s *Service) RevokeProjection(id string, req StateChangeRequest) (Projectio
 			TenantID:      projection.TenantID,
 			Type:          "mission.projection_revoked",
 			Actor:         req.Actor,
-			Payload:       map[string]any{"projection_id": projection.ProjectionID, "reason": req.Reason},
+			Payload:       map[string]any{"projection_id": projection.ProjectionID, "reason": req.Reason, "revoked_exchange_count": len(projection.ExchangeRecords)},
 			VersionBefore: projection.MissionVersion,
 			VersionAfter:  projection.MissionVersion,
 			OccurredAt:    projection.RevokedAt,
@@ -416,6 +456,11 @@ func projectionResponse(projection Projection) ProjectionResponse {
 		MissionVersion: projection.MissionVersion,
 		Type:           projection.Type,
 		Status:         projection.Status,
+		Scopes:         append([]string(nil), projection.Scopes...),
+		Audience:       projection.Audience,
+		ToolName:       projection.ToolName,
+		Resource:       cloneActionResource(projection.Resource),
+		Operation:      projection.Operation,
 		Token:          projection.Token,
 		ExpiresAt:      projection.ExpiresAt,
 	}
@@ -435,6 +480,7 @@ func projectionStatusResponse(projection Projection, now time.Time) ProjectionSt
 		Status:         status,
 		ExpiresAt:      projection.ExpiresAt,
 		RevokedAt:      projection.RevokedAt,
+		ExchangeCount:  len(projection.ExchangeRecords),
 	}
 }
 

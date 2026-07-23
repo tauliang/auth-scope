@@ -15,55 +15,84 @@ const (
 	ApprovalAppliesExpansion = "expansion"
 
 	defaultProjectionTTLSeconds = 300
+	defaultCredentialTTLSeconds = 120
 	defaultLeaseTTLSeconds      = 60
+	maxCredentialTTLSeconds     = 300
 	maxLeaseTTLSeconds          = 300
 )
 
 type Projection struct {
-	ProjectionID   string         `json:"projection_id"`
-	MissionRef     string         `json:"mission_ref"`
-	MissionVersion int            `json:"mission_version"`
-	TenantID       string         `json:"tenant_id,omitempty"`
-	Type           string         `json:"type"`
-	Actor          Actor          `json:"actor"`
-	Claims         map[string]any `json:"claims,omitempty"`
-	Token          string         `json:"token,omitempty"`
-	Status         string         `json:"status"`
-	IssuedAt       time.Time      `json:"issued_at"`
-	ExpiresAt      time.Time      `json:"expires_at"`
-	RevokedAt      time.Time      `json:"revoked_at,omitempty"`
+	ProjectionID    string                     `json:"projection_id"`
+	MissionRef      string                     `json:"mission_ref"`
+	MissionVersion  int                        `json:"mission_version"`
+	TenantID        string                     `json:"tenant_id,omitempty"`
+	Type            string                     `json:"type"`
+	Actor           Actor                      `json:"actor"`
+	Scopes          []string                   `json:"scopes,omitempty"`
+	Audience        string                     `json:"audience,omitempty"`
+	ToolName        string                     `json:"tool_name,omitempty"`
+	Resource        *ActionResource            `json:"resource,omitempty"`
+	Operation       string                     `json:"operation,omitempty"`
+	Claims          map[string]any             `json:"claims,omitempty"`
+	Token           string                     `json:"token,omitempty"`
+	Status          string                     `json:"status"`
+	IssuedAt        time.Time                  `json:"issued_at"`
+	ExpiresAt       time.Time                  `json:"expires_at"`
+	RevokedAt       time.Time                  `json:"revoked_at,omitempty"`
+	ExchangeRecords []CredentialExchangeRecord `json:"exchange_records,omitempty"`
 }
 
 type ProjectionPayload struct {
-	ProjectionID   string         `json:"projection_id"`
-	MissionRef     string         `json:"mission_ref"`
-	MissionVersion int            `json:"mission_version"`
-	TenantID       string         `json:"tenant_id,omitempty"`
-	Type           string         `json:"type"`
-	Actor          Actor          `json:"actor"`
-	Agent          Agent          `json:"agent"`
-	AuthorityHash  string         `json:"authority_hash"`
-	Claims         map[string]any `json:"claims,omitempty"`
-	IssuedAt       time.Time      `json:"issued_at"`
-	ExpiresAt      time.Time      `json:"expires_at"`
+	JTI            string            `json:"jti,omitempty"`
+	Issuer         string            `json:"iss,omitempty"`
+	Subject        string            `json:"sub,omitempty"`
+	Audience       string            `json:"aud,omitempty"`
+	TokenUse       string            `json:"token_use,omitempty"`
+	ProjectionID   string            `json:"projection_id"`
+	MissionRef     string            `json:"mission_ref"`
+	MissionVersion int               `json:"mission_version"`
+	TenantID       string            `json:"tenant_id,omitempty"`
+	Type           string            `json:"type"`
+	Actor          Actor             `json:"actor"`
+	Agent          Agent             `json:"agent"`
+	AuthorityHash  string            `json:"authority_hash"`
+	Scopes         []string          `json:"scope,omitempty"`
+	ToolName       string            `json:"tool_name,omitempty"`
+	Resource       *ActionResource   `json:"resource,omitempty"`
+	Operation      string            `json:"operation,omitempty"`
+	Confirmation   map[string]string `json:"cnf,omitempty"`
+	Claims         map[string]any    `json:"claims,omitempty"`
+	IssuedAt       time.Time         `json:"issued_at"`
+	NotBefore      time.Time         `json:"not_before,omitempty"`
+	ExpiresAt      time.Time         `json:"expires_at"`
 }
 
 type CreateProjectionRequest struct {
-	MissionVersionSeen int            `json:"mission_version_seen,omitempty"`
-	Actor              Actor          `json:"actor"`
-	Type               string         `json:"type"`
-	Claims             map[string]any `json:"claims,omitempty"`
-	TTLSeconds         int            `json:"ttl_seconds,omitempty"`
+	MissionVersionSeen int             `json:"mission_version_seen,omitempty"`
+	Actor              Actor           `json:"actor"`
+	Type               string          `json:"type"`
+	Scopes             []string        `json:"scopes,omitempty"`
+	Audience           string          `json:"audience,omitempty"`
+	ToolName           string          `json:"tool_name,omitempty"`
+	Resource           *ActionResource `json:"resource,omitempty"`
+	Operation          string          `json:"operation,omitempty"`
+	Claims             map[string]any  `json:"claims,omitempty"`
+	TTLSeconds         int             `json:"ttl_seconds,omitempty"`
 }
 
 type ProjectionResponse struct {
-	ProjectionID   string    `json:"projection_id"`
-	MissionRef     string    `json:"mission_ref"`
-	MissionVersion int       `json:"mission_version"`
-	Type           string    `json:"type"`
-	Status         string    `json:"status"`
-	Token          string    `json:"token,omitempty"`
-	ExpiresAt      time.Time `json:"expires_at"`
+	ProjectionID   string          `json:"projection_id"`
+	MissionRef     string          `json:"mission_ref"`
+	MissionVersion int             `json:"mission_version"`
+	Type           string          `json:"type"`
+	Status         string          `json:"status"`
+	Scopes         []string        `json:"scopes,omitempty"`
+	Audience       string          `json:"audience,omitempty"`
+	ToolName       string          `json:"tool_name,omitempty"`
+	Resource       *ActionResource `json:"resource,omitempty"`
+	Operation      string          `json:"operation,omitempty"`
+	Token          string          `json:"token,omitempty"`
+	ExpiresAt      time.Time       `json:"expires_at"`
 }
 
 type ProjectionStatusResponse struct {
@@ -75,6 +104,7 @@ type ProjectionStatusResponse struct {
 	Status         string    `json:"status"`
 	ExpiresAt      time.Time `json:"expires_at,omitempty"`
 	RevokedAt      time.Time `json:"revoked_at,omitempty"`
+	ExchangeCount  int       `json:"exchange_count,omitempty"`
 }
 
 type VerifyProjectionRequest struct {
@@ -86,6 +116,97 @@ type VerifyProjectionResponse struct {
 	Payload    ProjectionPayload `json:"payload,omitempty"`
 	Projection *Projection       `json:"projection,omitempty"`
 	Error      string            `json:"error,omitempty"`
+}
+
+type CredentialExchangeRecord struct {
+	ExchangeID      string          `json:"exchange_id"`
+	ProjectionID    string          `json:"projection_id"`
+	JTI             string          `json:"jti"`
+	Nonce           string          `json:"nonce"`
+	Actor           Actor           `json:"actor"`
+	Scopes          []string        `json:"scopes,omitempty"`
+	Audience        string          `json:"audience,omitempty"`
+	ToolName        string          `json:"tool_name,omitempty"`
+	Resource        *ActionResource `json:"resource,omitempty"`
+	Operation       string          `json:"operation,omitempty"`
+	AccessTokenHash string          `json:"access_token_hash,omitempty"`
+	Status          string          `json:"status"`
+	IssuedAt        time.Time       `json:"issued_at"`
+	ExpiresAt       time.Time       `json:"expires_at"`
+	RevokedAt       time.Time       `json:"revoked_at,omitempty"`
+}
+
+type ExchangeProjectionTokenRequest struct {
+	ProjectionToken string          `json:"projection_token"`
+	Actor           Actor           `json:"actor"`
+	Nonce           string          `json:"nonce"`
+	RequestedScopes []string        `json:"requested_scopes,omitempty"`
+	Audience        string          `json:"audience,omitempty"`
+	ToolName        string          `json:"tool_name,omitempty"`
+	Resource        *ActionResource `json:"resource,omitempty"`
+	Operation       string          `json:"operation,omitempty"`
+	TTLSeconds      int             `json:"ttl_seconds,omitempty"`
+}
+
+type CredentialAccessTokenResponse struct {
+	AccessToken    string          `json:"access_token"`
+	TokenType      string          `json:"token_type"`
+	ExchangeID     string          `json:"exchange_id"`
+	JTI            string          `json:"jti"`
+	ProjectionID   string          `json:"projection_id"`
+	MissionRef     string          `json:"mission_ref"`
+	MissionVersion int             `json:"mission_version"`
+	TenantID       string          `json:"tenant_id,omitempty"`
+	Actor          Actor           `json:"actor"`
+	Scopes         []string        `json:"scopes,omitempty"`
+	Audience       string          `json:"audience,omitempty"`
+	ToolName       string          `json:"tool_name,omitempty"`
+	Resource       *ActionResource `json:"resource,omitempty"`
+	Operation      string          `json:"operation,omitempty"`
+	ExpiresIn      int             `json:"expires_in"`
+	ExpiresAt      time.Time       `json:"expires_at"`
+}
+
+type CredentialAccessTokenPayload struct {
+	JTI            string            `json:"jti"`
+	Issuer         string            `json:"iss"`
+	Subject        string            `json:"sub"`
+	Audience       string            `json:"aud,omitempty"`
+	TokenUse       string            `json:"token_use"`
+	ExchangeID     string            `json:"exchange_id"`
+	ProjectionID   string            `json:"projection_id"`
+	MissionRef     string            `json:"mission_ref"`
+	MissionVersion int               `json:"mission_version"`
+	TenantID       string            `json:"tenant_id,omitempty"`
+	Type           string            `json:"type"`
+	Actor          Actor             `json:"actor"`
+	Agent          Agent             `json:"agent"`
+	AuthorityHash  string            `json:"authority_hash"`
+	Scopes         []string          `json:"scope,omitempty"`
+	ToolName       string            `json:"tool_name,omitempty"`
+	Resource       *ActionResource   `json:"resource,omitempty"`
+	Operation      string            `json:"operation,omitempty"`
+	Confirmation   map[string]string `json:"cnf,omitempty"`
+	IssuedAt       time.Time         `json:"issued_at"`
+	NotBefore      time.Time         `json:"not_before,omitempty"`
+	ExpiresAt      time.Time         `json:"expires_at"`
+}
+
+type VerifyCredentialAccessTokenRequest struct {
+	Token     string          `json:"token"`
+	Actor     Actor           `json:"actor,omitempty"`
+	Audience  string          `json:"audience,omitempty"`
+	ToolName  string          `json:"tool_name,omitempty"`
+	Resource  *ActionResource `json:"resource,omitempty"`
+	Operation string          `json:"operation,omitempty"`
+}
+
+type VerifyCredentialAccessTokenResponse struct {
+	Valid      bool                         `json:"valid"`
+	Payload    CredentialAccessTokenPayload `json:"payload,omitempty"`
+	Projection *Projection                  `json:"projection,omitempty"`
+	Exchange   *CredentialExchangeRecord    `json:"exchange,omitempty"`
+	Error      string                       `json:"error,omitempty"`
 }
 
 type MissionLease struct {

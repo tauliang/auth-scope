@@ -521,6 +521,30 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/GenericObject" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/projections/exchange:
+    post:
+      operationId: exchangeProjectionToken
+      security: [{ agentSignature: [], agentID: [], agentNonce: [] }]
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "201":
+          description: Scoped brokered credential token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/projections/credentials/verify:
+    post:
+      operationId: verifyCredentialAccessToken
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/GenericJSON" }
+      responses:
+        "200":
+          description: Brokered credential verification result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenericObject" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/integrations/github/repositories:
     post:
       operationId: createGitHubRepositoryBinding

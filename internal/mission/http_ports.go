@@ -44,6 +44,8 @@ type ProjectionAPI interface {
 	GetProjectionStatus(string) (ProjectionStatusResponse, error)
 	RevokeProjection(string, StateChangeRequest) (ProjectionStatusResponse, error)
 	VerifyProjection(VerifyProjectionRequest) VerifyProjectionResponse
+	ExchangeProjectionToken(ExchangeProjectionTokenRequest) (CredentialAccessTokenResponse, error)
+	VerifyCredentialAccessToken(VerifyCredentialAccessTokenRequest) VerifyCredentialAccessTokenResponse
 	CreateMissionLease(string, CreateLeaseRequest) (LeaseResponse, error)
 	RefreshMissionLease(string, RefreshLeaseRequest) (LeaseResponse, error)
 	CreateApprovalRule(ApprovalRule) (ApprovalRule, error)

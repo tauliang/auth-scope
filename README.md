@@ -5,7 +5,7 @@
 ## Features
 
 - **Mission authority lifecycle:** proposals, approvals, synchronous evaluation, risky-action expansion requests, safe subset negotiation, resume checks, strict-subset delegation, completion, revocation, and cascade semantics.
-- **Agent identity and runtime enforcement:** agent registry, Ed25519 request signatures, nonce replay protection, AuthZEN-compatible authorization, MCP-style tool contracts, signed external projections, short-lived mission leases, and fail-closed production startup checks.
+- **Agent identity and runtime enforcement:** agent registry, Ed25519 request signatures, nonce replay protection, AuthZEN-compatible authorization, MCP-style tool contracts, brokered OAuth/MCP/tool credentials, signed external projections, short-lived mission leases, and fail-closed production startup checks.
 - **Governance controls:** versioned policy-as-code bundles with dry-run simulation, multi-approver expansion rules, containment rules, blast-radius inspection, tenant-scoped administrator credentials, and runtime blocks for evaluation, delegation, expansion, projections, leases, and resume.
 - **Evidence and audit:** signed decision artifacts, stored policy evidence with applied policy bundle/rule IDs, immutable event history, Server-Sent Events streaming, transactional outbox publishing, and mission/agent lineage graphs.
 - **Identity and workflow integrations:** GitHub repository and check-run hooks for coding-agent PR governance, Okta application/group authority resolution, Microsoft Entra app registration/group/role authority resolution, Slack workspace/message-action authorization, Atlassian Jira/Confluence action authorization, and Salesforce CRM record-action authorization.
@@ -301,6 +301,8 @@ GET  /v1/projections
 GET  /v1/projections/{projection_id}/status
 POST /v1/projections/{projection_id}/revoke
 POST /v1/projections/verify
+POST /v1/projections/exchange
+POST /v1/projections/credentials/verify
 POST /v1/integrations/github/repositories
 GET  /v1/integrations/github/repositories
 POST /v1/integrations/github/webhooks
@@ -492,7 +494,7 @@ curl -s http://localhost:8080/v1/tool-calls/authorize \
   }'
 ```
 
-Mint and verify a short-lived projection for an external gateway:
+Mint a short-lived projection grant, exchange it for a scoped brokered credential, and verify that credential against the intended tool binding:
 
 ```sh
 curl -s http://localhost:8080/v1/missions/{mission_ref}/projections \
@@ -500,14 +502,42 @@ curl -s http://localhost:8080/v1/missions/{mission_ref}/projections \
   -d '{
     "mission_version_seen": 1,
     "actor": {"agent_instance_id": "inst_123", "client_id": "research-agent"},
-    "type": "mcp_context",
+    "type": "tool_gateway_token",
+    "scopes": ["drive.read"],
+    "audience": "tool-gateway",
+    "tool_name": "drive.read",
+    "resource": {"type": "drive_folder", "id": "board"},
+    "operation": "read",
     "ttl_seconds": 300
   }'
 
-curl -s http://localhost:8080/v1/projections/verify \
+curl -s http://localhost:8080/v1/projections/exchange \
   -H 'content-type: application/json' \
-  -d '{"token": "{projection_token}"}'
+  -d '{
+    "projection_token": "{projection_token}",
+    "actor": {"agent_instance_id": "inst_123", "client_id": "research-agent"},
+    "nonce": "gateway-request-001",
+    "requested_scopes": ["drive.read"],
+    "audience": "tool-gateway",
+    "tool_name": "drive.read",
+    "resource": {"type": "drive_folder", "id": "board"},
+    "operation": "read",
+    "ttl_seconds": 120
+  }'
+
+curl -s http://localhost:8080/v1/projections/credentials/verify \
+  -H 'content-type: application/json' \
+  -d '{
+    "token": "{access_token}",
+    "actor": {"agent_instance_id": "inst_123", "client_id": "research-agent"},
+    "audience": "tool-gateway",
+    "tool_name": "drive.read",
+    "resource": {"type": "drive_folder", "id": "board"},
+    "operation": "read"
+  }'
 ```
+
+Projection grants and exchanged credentials are signed with richer claims including `jti`, issuer, audience, token use, mission version, agent identity, authority hash, scopes, and confirmation binding. Exchanges require a nonce; replaying the same nonce returns a conflict. Revoking a projection marks its exchange records revoked, and credential verification fails once the projection, mission, or broker exchange is revoked or expired.
 
 Create a mission lease for cached gateway decisions and refresh it before each batch:
 
@@ -952,4 +982,4 @@ curl -s http://localhost:8080/access/v1/evaluation \
 
 ## MVP Boundary
 
-The MVP currently includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, versioned policy-as-code bundles with simulation, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, GitHub repository/check-run integration hooks, Okta app/group authority-context integration hooks, Microsoft Entra app/group/role authority-context integration hooks, Slack workspace/message-action integration hooks, Atlassian Jira/Confluence site/action integration hooks, and Salesforce org/record-action integration hooks. The remaining production work is hardening deployment operations, adding richer signed projections for OAuth/MCP integrations, adding live JWKS/introspection verification where the gateway does not already verify identity-provider tokens or provider-specific user/workspace/site facts, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.
+The MVP currently includes the first PostgreSQL persistence slice plus the execution-governance enrichment slice: embedded schema migrations, opaque text identifiers, lossless mission/proposal/event/governance JSON round-trips, delegation traversal indexes, a transactional outbox, token-bound governance administrators, agent identity registration, signed runtime requests, AuthZEN-compatible evaluation, signed decision artifacts, atomic versioned expansion approvals, versioned policy-as-code bundles with simulation, policy evidence storage, MCP-style tool gateway enforcement contracts, signed external projections, brokered scoped credential exchange, mission leases, SSE event streaming, multi-approver expansion policies, centralized containment enforcement, tenant-scoped blast-radius reads, authority negotiation, mission/agent lineage graphs, GitHub repository/check-run integration hooks, Okta app/group authority-context integration hooks, Microsoft Entra app/group/role authority-context integration hooks, Slack workspace/message-action integration hooks, Atlassian Jira/Confluence site/action integration hooks, and Salesforce org/record-action integration hooks. The remaining production work is hardening deployment operations, adding live JWKS/introspection verification where the gateway does not already verify identity-provider tokens or provider-specific user/workspace/site facts, and wiring CI to run the `DATABASE_URL`-gated PostgreSQL conformance test.

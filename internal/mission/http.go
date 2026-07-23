@@ -101,6 +101,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("GET /v1/projections/{projection_id}/status", h.requireAdmin(http.HandlerFunc(h.getProjectionStatus)))
 	mux.Handle("POST /v1/projections/{projection_id}/revoke", h.requireAdminPermission(AdminPermissionOperate, http.HandlerFunc(h.revokeProjection)))
 	mux.HandleFunc("POST /v1/projections/verify", h.verifyProjection)
+	mux.HandleFunc("POST /v1/projections/exchange", h.exchangeProjectionToken)
+	mux.HandleFunc("POST /v1/projections/credentials/verify", h.verifyCredentialAccessToken)
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/leases", h.createMissionLease)
 	mux.HandleFunc("POST /v1/leases/{lease_id}/refresh", h.refreshMissionLease)
 	mux.Handle("POST /v1/approval-rules", h.requireAdminPermission(AdminPermissionManageGovernance, http.HandlerFunc(h.createApprovalRule)))
@@ -652,6 +654,38 @@ func (h *Handler) verifyProjection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, h.services.Projection.VerifyProjection(req))
+}
+
+func (h *Handler) exchangeProjectionToken(w http.ResponseWriter, r *http.Request) {
+	var req ExchangeProjectionTokenRequest
+	body, ok := decodeJSONBody(w, r, &req)
+	if !ok {
+		return
+	}
+	identity, ok := h.verifiedAgentIdentity(w, r, body)
+	if !ok {
+		return
+	}
+	if identity != nil {
+		if err := bindActorIdentity(&req.Actor, *identity); err != nil {
+			writeError(w, http.StatusUnauthorized, err)
+			return
+		}
+	}
+	resp, err := h.services.Projection.ExchangeProjectionToken(req)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *Handler) verifyCredentialAccessToken(w http.ResponseWriter, r *http.Request) {
+	var req VerifyCredentialAccessTokenRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	writeJSON(w, http.StatusOK, h.services.Projection.VerifyCredentialAccessToken(req))
 }
 
 func (h *Handler) createMissionLease(w http.ResponseWriter, r *http.Request) {

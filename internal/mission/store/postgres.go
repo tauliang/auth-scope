@@ -994,6 +994,191 @@ func (s *PostgresStore) ListToolContracts() ([]mission.ToolContract, error) {
 	return contracts, nil
 }
 
+// SavePolicyBundle saves a versioned policy-as-code bundle.
+func (s *PostgresStore) SavePolicyBundle(bundle mission.PolicyBundle) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bundleJSON, err := json.Marshal(bundle)
+	if err != nil {
+		return fmt.Errorf("marshal policy bundle: %w", err)
+	}
+	createdAt := bundle.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = s.clock.Now()
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("SavePolicyBundle", startTime)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO policy_bundles (
+			id, tenant_id, version, status, bundle_hash, signature, bundle_json, created_at, activated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, bundle.BundleID, nullableString(bundle.TenantID), bundle.Version, bundle.Status, bundle.BundleHash, nullableString(bundle.Signature), bundleJSON, createdAt, nullableTime(bundle.ActivatedAt))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return mission.ErrConflict
+		}
+		return fmt.Errorf("insert policy bundle: %w", err)
+	}
+	return nil
+}
+
+// GetPolicyBundle retrieves a policy bundle by ID.
+func (s *PostgresStore) GetPolicyBundle(id string) (mission.PolicyBundle, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetPolicyBundle", startTime)
+
+	var bundleJSON []byte
+	err := s.db.QueryRowContext(ctx, `SELECT bundle_json FROM policy_bundles WHERE id = $1`, id).Scan(&bundleJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.PolicyBundle{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.PolicyBundle{}, fmt.Errorf("query policy bundle: %w", err)
+	}
+	return unmarshalPolicyBundle(bundleJSON)
+}
+
+// ListPolicyBundles lists all policy bundles.
+func (s *PostgresStore) ListPolicyBundles() ([]mission.PolicyBundle, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ListPolicyBundles", startTime)
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT bundle_json
+		FROM policy_bundles
+		ORDER BY created_at ASC, id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query policy bundles: %w", err)
+	}
+	defer rows.Close()
+
+	bundles := make([]mission.PolicyBundle, 0)
+	for rows.Next() {
+		var bundleJSON []byte
+		if err := rows.Scan(&bundleJSON); err != nil {
+			return nil, fmt.Errorf("scan policy bundle: %w", err)
+		}
+		bundle, err := unmarshalPolicyBundle(bundleJSON)
+		if err != nil {
+			return nil, err
+		}
+		bundles = append(bundles, bundle)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate policy bundles: %w", err)
+	}
+	return bundles, nil
+}
+
+// ActivatePolicyBundle activates a bundle and archives the currently active bundle in the same tenant.
+func (s *PostgresStore) ActivatePolicyBundle(bundle mission.PolicyBundle) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	bundleJSON, err := json.Marshal(bundle)
+	if err != nil {
+		return fmt.Errorf("marshal policy bundle: %w", err)
+	}
+
+	startTime := time.Now()
+	defer s.logSlowQuery("ActivatePolicyBundle", startTime)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin activate policy bundle: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE policy_bundles
+		SET status = 'archived',
+			bundle_json = jsonb_set(bundle_json, '{status}', '"archived"', true)
+		WHERE status = 'active'
+			AND COALESCE(tenant_id, '') = COALESCE($1, '')
+			AND id <> $2
+	`, nullableString(bundle.TenantID), bundle.BundleID); err != nil {
+		return fmt.Errorf("archive active policy bundle: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE policy_bundles
+		SET status = $1,
+			signature = $2,
+			bundle_hash = $3,
+			bundle_json = $4,
+			activated_at = $5
+		WHERE id = $6
+	`, bundle.Status, nullableString(bundle.Signature), bundle.BundleHash, bundleJSON, nullableTime(bundle.ActivatedAt), bundle.BundleID)
+	if err != nil {
+		return fmt.Errorf("activate policy bundle: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read activate policy bundle result: %w", err)
+	}
+	if rows == 0 {
+		return mission.ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit activate policy bundle: %w", err)
+	}
+	return nil
+}
+
+// GetActivePolicyBundle returns the active tenant bundle, falling back to a global active bundle.
+func (s *PostgresStore) GetActivePolicyBundle(tenantID string) (mission.PolicyBundle, error) {
+	bundle, err := s.getActivePolicyBundleForTenant(tenantID)
+	if err == nil {
+		return bundle, nil
+	}
+	if !errors.Is(err, mission.ErrNotFound) || tenantID == "" {
+		return mission.PolicyBundle{}, err
+	}
+	return s.getActivePolicyBundleForTenant("")
+}
+
+func (s *PostgresStore) getActivePolicyBundleForTenant(tenantID string) (mission.PolicyBundle, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	startTime := time.Now()
+	defer s.logSlowQuery("GetActivePolicyBundle", startTime)
+
+	var bundleJSON []byte
+	err := s.db.QueryRowContext(ctx, `
+		SELECT bundle_json
+		FROM policy_bundles
+		WHERE status = 'active' AND COALESCE(tenant_id, '') = COALESCE($1, '')
+		ORDER BY activated_at DESC NULLS LAST, id ASC
+		LIMIT 1
+	`, nullableString(tenantID)).Scan(&bundleJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return mission.PolicyBundle{}, mission.ErrNotFound
+	}
+	if err != nil {
+		return mission.PolicyBundle{}, fmt.Errorf("query active policy bundle: %w", err)
+	}
+	return unmarshalPolicyBundle(bundleJSON)
+}
+
+func unmarshalPolicyBundle(bundleJSON []byte) (mission.PolicyBundle, error) {
+	var bundle mission.PolicyBundle
+	if err := json.Unmarshal(bundleJSON, &bundle); err != nil {
+		return mission.PolicyBundle{}, fmt.Errorf("unmarshal policy bundle: %w", err)
+	}
+	return bundle, nil
+}
+
 // SaveProjection saves a signed external authorization projection.
 func (s *PostgresStore) SaveProjection(projection mission.Projection) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

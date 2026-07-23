@@ -5,6 +5,7 @@ import type {
   BlastRadius,
   CollectionPage,
   ContainmentRule,
+  CreatePolicyBundleRequest,
   EventRecord,
   ExpansionRequest,
   LineageGraph,
@@ -12,6 +13,8 @@ import type {
   Mission,
   MissionProposal,
   OperationsSummary,
+  PolicyBundle,
+  SimulatePolicyBundleResponse,
   Projection,
   ToolContract,
   ApiErrorBody,
@@ -181,6 +184,28 @@ export class ApiClient {
 
   createApprovalRule(body: Partial<ApprovalRule>) {
     return this.request<ApprovalRule>("/v1/approval-rules", { method: "POST", body: JSON.stringify(body) });
+  }
+
+  listPolicyBundles() {
+    return this.request<{ policy_bundles: PolicyBundle[] }>("/v1/policy-bundles");
+  }
+
+  createPolicyBundle(body: CreatePolicyBundleRequest) {
+    return this.request<PolicyBundle>("/v1/policy-bundles", { method: "POST", body: JSON.stringify(body) });
+  }
+
+  activatePolicyBundle(id: string, reason: string) {
+    return this.request<PolicyBundle>(`/v1/policy-bundles/${encodeURIComponent(id)}/activate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  simulatePolicyBundle(id: string, body: unknown) {
+    return this.request<SimulatePolicyBundleResponse>(`/v1/policy-bundles/${encodeURIComponent(id)}/simulate`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
   }
 
   listToolContracts(params: ListParams = {}) {

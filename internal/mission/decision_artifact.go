@@ -24,6 +24,9 @@ type DecisionArtifactPayload struct {
 	MissionRef         string    `json:"mission_ref"`
 	MissionVersion     int       `json:"mission_version"`
 	PolicyVersion      string    `json:"policy_version,omitempty"`
+	PolicyBundleID     string    `json:"policy_bundle_id,omitempty"`
+	PolicyBundleHash   string    `json:"policy_bundle_hash,omitempty"`
+	PolicyRuleIDs      []string  `json:"policy_rule_ids,omitempty"`
 	EvidenceID         string    `json:"evidence_id,omitempty"`
 	ExpansionRequestID string    `json:"expansion_request_id,omitempty"`
 	Decision           Decision  `json:"decision"`

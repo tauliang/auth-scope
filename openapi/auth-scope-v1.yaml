@@ -879,6 +879,91 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/GenericObject" }
         default: { $ref: "#/components/responses/Error" }
+  /v1/policy-bundles:
+    post:
+      operationId: createPolicyBundle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePolicyBundleRequest" }
+      responses:
+        "201":
+          description: Draft policy-as-code bundle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PolicyBundle" }
+        default: { $ref: "#/components/responses/Error" }
+    get:
+      operationId: listPolicyBundles
+      responses:
+        "200":
+          description: Policy-as-code bundles.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_bundles:
+                    type: array
+                    items: { $ref: "#/components/schemas/PolicyBundle" }
+                required: [policy_bundles]
+        default: { $ref: "#/components/responses/Error" }
+  /v1/policy-bundles/{bundle_id}:
+    get:
+      operationId: getPolicyBundle
+      parameters:
+        - name: bundle_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Policy-as-code bundle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PolicyBundle" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/policy-bundles/{bundle_id}/activate:
+    post:
+      operationId: activatePolicyBundle
+      parameters:
+        - name: bundle_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActivatePolicyBundleRequest" }
+      responses:
+        "200":
+          description: Active signed policy-as-code bundle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PolicyBundle" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/policy-bundles/{bundle_id}/simulate:
+    post:
+      operationId: simulatePolicyBundle
+      parameters:
+        - name: bundle_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SimulatePolicyBundleRequest" }
+      responses:
+        "200":
+          description: Side-effect-free policy simulation result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimulatePolicyBundleResponse" }
+        default: { $ref: "#/components/responses/Error" }
   /v1/containment-rules:
     post:
       operationId: createContainmentRule
@@ -1110,6 +1195,51 @@ components:
         resources: { type: array, items: { $ref: "#/components/schemas/ResourceGrant" } }
         forbidden_actions: { type: array, items: { type: string } }
       required: [resources]
+    Condition:
+      type: object
+      properties:
+        id: { type: string }
+        expression: { type: string }
+        evaluation: { type: string }
+        on_failure: { type: string }
+      required: [id, expression]
+    ConditionEvaluation:
+      type: object
+      properties:
+        id: { type: string }
+        expression: { type: string }
+        result: { type: boolean }
+        error: { type: string }
+      required: [id, expression, result]
+    Actor:
+      type: object
+      properties:
+        agent_instance_id: { type: string }
+        client_id: { type: string }
+        key_thumbprint: { type: string }
+      required: [agent_instance_id, client_id]
+    ActionResource:
+      type: object
+      properties:
+        type: { type: string }
+        id: { type: string }
+      required: [type, id]
+    Action:
+      type: object
+      properties:
+        type: { type: string }
+        name: { type: string }
+        resource: { $ref: "#/components/schemas/ActionResource" }
+        operation: { type: string }
+      required: [type, resource, operation]
+    EvaluateRequest:
+      type: object
+      properties:
+        mission_version_seen: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        action: { $ref: "#/components/schemas/Action" }
+        context: { type: object, additionalProperties: true }
+      required: [actor, action]
     Delegation:
       type: object
       additionalProperties: true
@@ -1155,6 +1285,117 @@ components:
     ToolContract:
       type: object
       additionalProperties: true
+    PolicyBundle:
+      type: object
+      properties:
+        bundle_id: { type: string }
+        tenant_id: { type: string }
+        version: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [draft, active, archived] }
+        combining_algorithm: { type: string, enum: [first_applicable] }
+        rules:
+          type: array
+          items: { $ref: "#/components/schemas/PolicyRule" }
+        bundle_hash: { type: string }
+        signature: { type: string }
+        created_by: { $ref: "#/components/schemas/Principal" }
+        activated_by: { $ref: "#/components/schemas/Principal" }
+        created_at: { type: string, format: date-time }
+        activated_at: { type: string, format: date-time }
+      required: [bundle_id, version, status, rules]
+    CreatePolicyBundleRequest:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        version: { type: string }
+        name: { type: string }
+        description: { type: string }
+        combining_algorithm: { type: string, enum: [first_applicable] }
+        rules:
+          type: array
+          items: { $ref: "#/components/schemas/PolicyRule" }
+      required: [version, rules]
+    ActivatePolicyBundleRequest:
+      type: object
+      properties:
+        reason: { type: string }
+    PolicyRule:
+      type: object
+      properties:
+        rule_id: { type: string }
+        description: { type: string }
+        priority: { type: integer }
+        disabled: { type: boolean }
+        effect: { type: string, enum: [allow, deny, require_approval, require_expansion, allow_with_constraints] }
+        match: { $ref: "#/components/schemas/PolicyRuleMatch" }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/Condition" }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        constraints: { type: object, additionalProperties: true }
+      required: [effect]
+    PolicyRuleMatch:
+      type: object
+      properties:
+        action_types: { type: array, items: { type: string } }
+        operations: { type: array, items: { type: string } }
+        resource_types: { type: array, items: { type: string } }
+        resource_ids: { type: array, items: { type: string } }
+        agent_client_ids: { type: array, items: { type: string } }
+        principal_subjects: { type: array, items: { type: string } }
+        base_decisions: { type: array, items: { type: string } }
+    PolicyRuleResult:
+      type: object
+      properties:
+        rule_id: { type: string }
+        effect: { type: string }
+        matched: { type: boolean }
+        applied: { type: boolean }
+        reason_codes: { type: array, items: { type: string } }
+        condition_results:
+          type: array
+          items: { $ref: "#/components/schemas/ConditionEvaluation" }
+        error: { type: string }
+      required: [rule_id, matched]
+    PolicyEvaluation:
+      type: object
+      properties:
+        bundle_id: { type: string }
+        tenant_id: { type: string }
+        policy_version: { type: string }
+        bundle_hash: { type: string }
+        status: { type: string }
+        rule_results:
+          type: array
+          items: { $ref: "#/components/schemas/PolicyRuleResult" }
+      required: [policy_version]
+    SimulatePolicyBundleRequest:
+      type: object
+      properties:
+        mission_ref: { type: string }
+        evaluation: { $ref: "#/components/schemas/EvaluateRequest" }
+        base_decision: { type: string }
+      required: [mission_ref, evaluation]
+    SimulatePolicyBundleResponse:
+      type: object
+      properties:
+        bundle_id: { type: string }
+        tenant_id: { type: string }
+        policy_version: { type: string }
+        bundle_hash: { type: string }
+        original_decision: { type: string }
+        decision: { type: string }
+        reason_codes: { type: array, items: { type: string } }
+        human_reason: { type: string }
+        constraints: { type: object, additionalProperties: true }
+        policy_evaluation: { $ref: "#/components/schemas/PolicyEvaluation" }
+        rule_results:
+          type: array
+          items: { $ref: "#/components/schemas/PolicyRuleResult" }
+      required: [bundle_id, policy_version, original_decision, decision, policy_evaluation]
     Projection:
       type: object
       additionalProperties: true

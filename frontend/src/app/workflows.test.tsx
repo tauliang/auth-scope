@@ -83,6 +83,16 @@ const event = {
   occurred_at: now,
   payload: { proposal_id: proposal.proposal_id },
 };
+const policyBundle = {
+  bundle_id: "policy-1",
+  tenant_id: "demo",
+  version: "mission-policy/custom",
+  name: "Enterprise guardrail",
+  status: "draft",
+  rules: [{ rule_id: "guardrail-001", effect: "deny" }],
+  bundle_hash: "sha256:test",
+  created_at: now,
+};
 
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -120,6 +130,9 @@ function operatorApi(input: RequestInfo | URL, init?: RequestInit) {
   if (path === `/v1/containment-rules/${containment.rule_id}`) return Promise.resolve(response(containment));
   if (path === "/v1/approval-rules" && method === "POST") return Promise.resolve(response({ rule_id: "approval-rule-2", created_at: now }));
   if (path === "/v1/approval-rules") return Promise.resolve(response({ approval_rules: [{ rule_id: "approval-rule-1", tenant_id: "demo", applies_to: "expansion", required_approvals: 2, allowed_subjects: ["alice@example.com", "bob@example.com"], created_at: now }] }));
+  if (path === "/v1/policy-bundles" && method === "POST") return Promise.resolve(response({ ...policyBundle, bundle_id: "policy-2" }, 201));
+  if (path === `/v1/policy-bundles/${policyBundle.bundle_id}/activate`) return Promise.resolve(response({ ...policyBundle, status: "active", signature: "hs256:test" }));
+  if (path === "/v1/policy-bundles") return Promise.resolve(response({ policy_bundles: [policyBundle] }));
   if (path === "/v1/tool-contracts" && method === "POST") return Promise.resolve(response({ tool_name: "slack.post" }, 201));
   if (path === "/v1/tool-contracts") return Promise.resolve(response({ items: [{ tool_name: "drive.read", resource_type: "drive_folder", operation: "read", required_context: ["finance.close.status"] }], total: 1 }));
   if (path === `/v1/projections/${projection.projection_id}/revoke`) return Promise.resolve(response({ ...projection, status: "revoked" }));
@@ -137,6 +150,7 @@ function emptyOperatorApi(input: RequestInfo | URL, init?: RequestInit) {
   if (path === "/v1/events" || path === "/v1/expansion-requests" || path === "/v1/missions" || path === "/v1/agents" || path === "/v1/projections" || path === "/v1/tool-contracts" || path === "/v1/mission-proposals") return Promise.resolve(response({ items: [], total: 0 }));
   if (path === "/v1/containment-rules") return Promise.resolve(response({ containment_rules: [] }));
   if (path === "/v1/approval-rules") return Promise.resolve(response({ approval_rules: [] }));
+  if (path === "/v1/policy-bundles") return Promise.resolve(response({ policy_bundles: [] }));
   return operatorApi(input, init);
 }
 
@@ -289,6 +303,17 @@ describe("operator workflows", () => {
     await user.click(screen.getByRole("button", { name: "Approval rule" }));
     await user.click(screen.getByRole("button", { name: "Create rule" }));
     expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/approval-rules$/), expect.objectContaining({ method: "POST" }));
+
+    await user.click(screen.getByRole("button", { name: "Activate" }));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/policy-bundles\/policy-1\/activate$/), expect.objectContaining({ method: "POST" }));
+
+    await user.click(screen.getByRole("button", { name: "Policy bundle" }));
+    const policyBand = screen.getByRole("heading", { name: "New policy bundle" }).closest("section")!;
+    await user.clear(within(policyBand).getByLabelText("Version"));
+    await user.type(within(policyBand).getByLabelText("Version"), "mission-policy/ui-test");
+    await user.click(within(policyBand).getByRole("button", { name: "Create bundle" }));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/policy-bundles$/), expect.objectContaining({ method: "POST" }));
+
     await user.click(screen.getByRole("button", { name: "Tool contract" }));
     await user.type(screen.getByLabelText("Tool name"), "slack.post");
     await user.type(screen.getByLabelText("Resource type"), "slack_channel");

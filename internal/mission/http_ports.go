@@ -32,6 +32,11 @@ type GovernanceAPI interface {
 	RegisterToolContract(ToolContract) (ToolContract, error)
 	GetToolContract(string) (ToolContract, error)
 	AuthorizeToolCall(AuthorizeToolCallRequest) (AuthorizeToolCallResponse, error)
+	CreatePolicyBundle(CreatePolicyBundleRequest, Principal) (PolicyBundle, error)
+	GetPolicyBundle(string) (PolicyBundle, error)
+	ListPolicyBundles() ([]PolicyBundle, error)
+	ActivatePolicyBundle(string, ActivatePolicyBundleRequest, Principal) (PolicyBundle, error)
+	SimulatePolicyBundle(string, SimulatePolicyBundleRequest) (SimulatePolicyBundleResponse, error)
 }
 
 type ProjectionAPI interface {

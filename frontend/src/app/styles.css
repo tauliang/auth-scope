@@ -285,7 +285,7 @@ h1, h2, h3 { letter-spacing: 0; }
 .rule-row:first-child, .tool-row:first-child { border-top: 0; }
 .rule-count { width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center; background: var(--amber-light); color: var(--amber); font-weight: 800; }
 .tool-row > svg { color: var(--violet); }
-.rule-row > div:last-child, .tool-row > div { display: flex; flex-direction: column; min-width: 0; }
+.rule-row > div:last-child, .tool-row > div { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
 .rule-row strong, .tool-row strong { font-size: 11px; }
 .rule-row span, .tool-row span { color: var(--muted); font-size: 9px; margin-top: 3px; }
 .rule-row small, .tool-row small { color: var(--faint); font-size: 9px; margin-top: 4px; overflow-wrap: anywhere; }

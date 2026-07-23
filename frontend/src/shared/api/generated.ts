@@ -884,6 +884,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/policy-bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPolicyBundles"];
+        put?: never;
+        post: operations["createPolicyBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/policy-bundles/{bundle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPolicyBundle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/policy-bundles/{bundle_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["activatePolicyBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/policy-bundles/{bundle_id}/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["simulatePolicyBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/containment-rules": {
         parameters: {
             query?: never;
@@ -1029,6 +1093,41 @@ export interface components {
             resources: components["schemas"]["ResourceGrant"][];
             forbidden_actions?: string[];
         };
+        Condition: {
+            id: string;
+            expression: string;
+            evaluation?: string;
+            on_failure?: string;
+        };
+        ConditionEvaluation: {
+            id: string;
+            expression: string;
+            result: boolean;
+            error?: string;
+        };
+        Actor: {
+            agent_instance_id: string;
+            client_id: string;
+            key_thumbprint?: string;
+        };
+        ActionResource: {
+            type: string;
+            id: string;
+        };
+        Action: {
+            type: string;
+            name?: string;
+            resource: components["schemas"]["ActionResource"];
+            operation: string;
+        };
+        EvaluateRequest: {
+            mission_version_seen?: number;
+            actor: components["schemas"]["Actor"];
+            action: components["schemas"]["Action"];
+            context?: {
+                [key: string]: unknown;
+            };
+        };
         Delegation: {
             [key: string]: unknown;
         };
@@ -1076,6 +1175,99 @@ export interface components {
         };
         ToolContract: {
             [key: string]: unknown;
+        };
+        PolicyBundle: {
+            bundle_id: string;
+            tenant_id?: string;
+            version: string;
+            name?: string;
+            description?: string;
+            /** @enum {string} */
+            status: "draft" | "active" | "archived";
+            /** @enum {string} */
+            combining_algorithm?: "first_applicable";
+            rules: components["schemas"]["PolicyRule"][];
+            bundle_hash?: string;
+            signature?: string;
+            created_by?: components["schemas"]["Principal"];
+            activated_by?: components["schemas"]["Principal"];
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            activated_at?: string;
+        };
+        CreatePolicyBundleRequest: {
+            tenant_id?: string;
+            version: string;
+            name?: string;
+            description?: string;
+            /** @enum {string} */
+            combining_algorithm?: "first_applicable";
+            rules: components["schemas"]["PolicyRule"][];
+        };
+        ActivatePolicyBundleRequest: {
+            reason?: string;
+        };
+        PolicyRule: {
+            rule_id?: string;
+            description?: string;
+            priority?: number;
+            disabled?: boolean;
+            /** @enum {string} */
+            effect: "allow" | "deny" | "require_approval" | "require_expansion" | "allow_with_constraints";
+            match?: components["schemas"]["PolicyRuleMatch"];
+            conditions?: components["schemas"]["Condition"][];
+            reason_codes?: string[];
+            human_reason?: string;
+            constraints?: {
+                [key: string]: unknown;
+            };
+        };
+        PolicyRuleMatch: {
+            action_types?: string[];
+            operations?: string[];
+            resource_types?: string[];
+            resource_ids?: string[];
+            agent_client_ids?: string[];
+            principal_subjects?: string[];
+            base_decisions?: string[];
+        };
+        PolicyRuleResult: {
+            rule_id: string;
+            effect?: string;
+            matched: boolean;
+            applied?: boolean;
+            reason_codes?: string[];
+            condition_results?: components["schemas"]["ConditionEvaluation"][];
+            error?: string;
+        };
+        PolicyEvaluation: {
+            bundle_id?: string;
+            tenant_id?: string;
+            policy_version: string;
+            bundle_hash?: string;
+            status?: string;
+            rule_results?: components["schemas"]["PolicyRuleResult"][];
+        };
+        SimulatePolicyBundleRequest: {
+            mission_ref: string;
+            evaluation: components["schemas"]["EvaluateRequest"];
+            base_decision?: string;
+        };
+        SimulatePolicyBundleResponse: {
+            bundle_id: string;
+            tenant_id?: string;
+            policy_version: string;
+            bundle_hash?: string;
+            original_decision: string;
+            decision: string;
+            reason_codes?: string[];
+            human_reason?: string;
+            constraints?: {
+                [key: string]: unknown;
+            };
+            policy_evaluation: components["schemas"]["PolicyEvaluation"];
+            rule_results?: components["schemas"]["PolicyRuleResult"][];
         };
         Projection: {
             [key: string]: unknown;
@@ -3400,6 +3592,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenericObject"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listPolicyBundles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policy-as-code bundles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        policy_bundles: components["schemas"]["PolicyBundle"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createPolicyBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePolicyBundleRequest"];
+            };
+        };
+        responses: {
+            /** @description Draft policy-as-code bundle. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyBundle"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getPolicyBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policy-as-code bundle. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyBundle"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    activatePolicyBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivatePolicyBundleRequest"];
+            };
+        };
+        responses: {
+            /** @description Active signed policy-as-code bundle. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyBundle"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    simulatePolicyBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulatePolicyBundleRequest"];
+            };
+        };
+        responses: {
+            /** @description Side-effect-free policy simulation result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulatePolicyBundleResponse"];
                 };
             };
             default: components["responses"]["Error"];

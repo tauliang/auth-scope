@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -38,6 +39,7 @@ type Store interface {
 	ApprovalStore
 	NegotiationStore
 	ContainmentStore
+	PolicyStore
 	GitHubStore
 	OktaStore
 	EntraStore
@@ -66,6 +68,7 @@ type MemoryStore struct {
 	approvals          map[string][]ApprovalRecord
 	negotiations       map[string]AuthorityNegotiation
 	containments       map[string]ContainmentRule
+	policyBundles      map[string]PolicyBundle
 	githubBindings     map[string]GitHubRepositoryBinding
 	githubDeliveries   map[string]GitHubWebhookDelivery
 	oktaBindings       map[string]OktaAppBinding
@@ -91,6 +94,7 @@ func NewMemoryStore() *MemoryStore {
 		approvals:          make(map[string][]ApprovalRecord),
 		negotiations:       make(map[string]AuthorityNegotiation),
 		containments:       make(map[string]ContainmentRule),
+		policyBundles:      make(map[string]PolicyBundle),
 		githubBindings:     make(map[string]GitHubRepositoryBinding),
 		githubDeliveries:   make(map[string]GitHubWebhookDelivery),
 		oktaBindings:       make(map[string]OktaAppBinding),
@@ -444,6 +448,96 @@ func (s *MemoryStore) ListToolContracts() ([]ToolContract, error) {
 		return 0
 	})
 	return contracts, nil
+}
+
+func (s *MemoryStore) SavePolicyBundle(bundle PolicyBundle) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.policyBundles[bundle.BundleID]; ok {
+		return ErrConflict
+	}
+	for _, existing := range s.policyBundles {
+		if existing.TenantID == bundle.TenantID && existing.Version == bundle.Version {
+			return ErrConflict
+		}
+	}
+	s.policyBundles[bundle.BundleID] = bundle
+	return nil
+}
+
+func (s *MemoryStore) GetPolicyBundle(id string) (PolicyBundle, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	bundle, ok := s.policyBundles[id]
+	if !ok {
+		return PolicyBundle{}, ErrNotFound
+	}
+	return bundle, nil
+}
+
+func (s *MemoryStore) ListPolicyBundles() ([]PolicyBundle, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	bundles := make([]PolicyBundle, 0, len(s.policyBundles))
+	for _, bundle := range s.policyBundles {
+		bundles = append(bundles, bundle)
+	}
+	slices.SortFunc(bundles, func(a, b PolicyBundle) int {
+		if a.CreatedAt.Equal(b.CreatedAt) {
+			return strings.Compare(a.BundleID, b.BundleID)
+		}
+		if a.CreatedAt.Before(b.CreatedAt) {
+			return -1
+		}
+		return 1
+	})
+	return bundles, nil
+}
+
+func (s *MemoryStore) ActivatePolicyBundle(bundle PolicyBundle) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.policyBundles[bundle.BundleID]; !ok {
+		return ErrNotFound
+	}
+	for id, existing := range s.policyBundles {
+		if id != bundle.BundleID && existing.TenantID == bundle.TenantID && existing.Status == PolicyBundleStatusActive {
+			existing.Status = PolicyBundleStatusArchived
+			s.policyBundles[id] = existing
+		}
+	}
+	bundle.Status = PolicyBundleStatusActive
+	s.policyBundles[bundle.BundleID] = bundle
+	return nil
+}
+
+func (s *MemoryStore) GetActivePolicyBundle(tenantID string) (PolicyBundle, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if bundle, ok := activePolicyBundleForTenant(s.policyBundles, tenantID); ok {
+		return bundle, nil
+	}
+	if tenantID != "" {
+		if bundle, ok := activePolicyBundleForTenant(s.policyBundles, ""); ok {
+			return bundle, nil
+		}
+	}
+	return PolicyBundle{}, ErrNotFound
+}
+
+func activePolicyBundleForTenant(bundles map[string]PolicyBundle, tenantID string) (PolicyBundle, bool) {
+	var selected PolicyBundle
+	found := false
+	for _, bundle := range bundles {
+		if bundle.TenantID != tenantID || bundle.Status != PolicyBundleStatusActive {
+			continue
+		}
+		if !found || bundle.ActivatedAt.After(selected.ActivatedAt) || (bundle.ActivatedAt.Equal(selected.ActivatedAt) && bundle.BundleID < selected.BundleID) {
+			selected = bundle
+			found = true
+		}
+	}
+	return selected, found
 }
 
 func (s *MemoryStore) SaveProjection(projection Projection) error {

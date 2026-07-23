@@ -105,6 +105,11 @@ func (h *Handler) Routes() http.Handler {
 	mux.Handle("POST /v1/approval-rules", h.requireAdmin(http.HandlerFunc(h.createApprovalRule)))
 	mux.Handle("GET /v1/approval-rules", h.requireAdmin(http.HandlerFunc(h.listApprovalRules)))
 	mux.Handle("POST /v1/expansion-requests/{expansion_id}/approvals", h.requireAdmin(http.HandlerFunc(h.submitExpansionApproval)))
+	mux.Handle("POST /v1/policy-bundles", h.requireAdmin(http.HandlerFunc(h.createPolicyBundle)))
+	mux.Handle("GET /v1/policy-bundles", h.requireAdmin(http.HandlerFunc(h.listPolicyBundles)))
+	mux.Handle("GET /v1/policy-bundles/{bundle_id}", h.requireAdmin(http.HandlerFunc(h.getPolicyBundle)))
+	mux.Handle("POST /v1/policy-bundles/{bundle_id}/activate", h.requireAdmin(http.HandlerFunc(h.activatePolicyBundle)))
+	mux.Handle("POST /v1/policy-bundles/{bundle_id}/simulate", h.requireAdmin(http.HandlerFunc(h.simulatePolicyBundle)))
 	mux.Handle("POST /v1/containment-rules", h.requireAdmin(http.HandlerFunc(h.createContainmentRule)))
 	mux.Handle("GET /v1/containment-rules", h.requireAdmin(http.HandlerFunc(h.listContainmentRules)))
 	mux.Handle("GET /v1/containment-rules/{rule_id}", h.requireAdmin(http.HandlerFunc(h.getContainmentRule)))
@@ -200,6 +205,7 @@ func (h *Handler) discovery(w http.ResponseWriter, r *http.Request) {
 			"signed_projections":        true,
 			"mission_leases":            true,
 			"approval_rules":            true,
+			"policy_as_code":            true,
 			"authority_negotiation":     true,
 			"containment_rules":         true,
 			"lineage_graphs":            true,

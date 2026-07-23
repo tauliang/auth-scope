@@ -43,7 +43,10 @@ describe("ApiClient", () => {
       client.listExpansions({ status: "pending" }), client.getExpansion("expansion"), client.approveExpansion("expansion", { reason: "yes" }), client.denyExpansion("expansion", "no"),
       client.listAgents(), client.getAgent("agent"), client.revokeAgent("agent", "rotate"),
       client.listContainment(), client.getContainment("rule"), client.createContainment({ target_id: "mission" }), client.liftContainment("rule", "resolved"), client.getBlastRadius("rule"),
-      client.listApprovalRules(), client.createApprovalRule({ required_approvals: 2 }), client.listToolContracts(), client.createToolContract({ tool_name: "drive.read" }),
+      client.listApprovalRules(), client.createApprovalRule({ required_approvals: 2 }),
+      client.listPolicyBundles(), client.createPolicyBundle({ version: "mission-policy/test", rules: [{ rule_id: "deny-delete", effect: "deny" }] }),
+      client.activatePolicyBundle("policy/bundle", "approved"), client.simulatePolicyBundle("policy/bundle", { mission_ref: "mission", evaluation: { actor: { agent_instance_id: "inst", client_id: "agent" }, action: { type: "tool_call", resource: { type: "drive", id: "board" }, operation: "read" } } }),
+      client.listToolContracts(), client.createToolContract({ tool_name: "drive.read" }),
       client.listProjections(), client.revokeProjection("projection", "stale"), client.listEvents({ type: "mission.created" }),
       client.missionLineage("mission"), client.agentLineage("agent"), client.transitionMission("mission", "complete", "done"),
       client.verifyDecisionArtifact("artifact"), client.verifyProjection("projection-token"),
@@ -53,6 +56,8 @@ describe("ApiClient", () => {
     const urls = fetchMock.mock.calls.map((call) => String(call[0]));
     expect(urls).toContain("/custom/v1/missions?q=board&limit=20");
     expect(urls).toContain("/custom/v1/missions/m%2Fref/introspect");
+    expect(urls).toContain("/custom/v1/policy-bundles/policy%2Fbundle/activate");
+    expect(urls).toContain("/custom/v1/policy-bundles/policy%2Fbundle/simulate");
     expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit).method === "POST")).toBe(true);
   });
 

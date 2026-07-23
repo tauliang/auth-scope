@@ -607,6 +607,103 @@ func TestPostgresStoreCommitExpansionDecisionTransaction(t *testing.T) {
 	}
 }
 
+func TestPostgresStorePolicyBundleMethods(t *testing.T) {
+	store, mock, cleanup := newMockPostgresStore(t)
+	defer cleanup()
+
+	bundle := samplePolicyBundle()
+	mock.ExpectExec("INSERT INTO policy_bundles").
+		WithArgs(
+			bundle.BundleID,
+			nullableString(bundle.TenantID),
+			bundle.Version,
+			bundle.Status,
+			bundle.BundleHash,
+			nullableString(bundle.Signature),
+			sqlmock.AnyArg(),
+			bundle.CreatedAt,
+			nullableTime(bundle.ActivatedAt),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.SavePolicyBundle(bundle); err != nil {
+		t.Fatalf("SavePolicyBundle: %v", err)
+	}
+	mock.ExpectExec("INSERT INTO policy_bundles").
+		WithArgs(
+			bundle.BundleID,
+			nullableString(bundle.TenantID),
+			bundle.Version,
+			bundle.Status,
+			bundle.BundleHash,
+			nullableString(bundle.Signature),
+			sqlmock.AnyArg(),
+			bundle.CreatedAt,
+			nullableTime(bundle.ActivatedAt),
+		).
+		WillReturnError(&pq.Error{Code: "23505"})
+	if err := store.SavePolicyBundle(bundle); !errors.Is(err, mission.ErrConflict) {
+		t.Fatalf("SavePolicyBundle duplicate err = %v, want ErrConflict", err)
+	}
+
+	bundleJSON := mustJSON(t, bundle)
+	mock.ExpectQuery("SELECT bundle_json FROM policy_bundles").
+		WithArgs(bundle.BundleID).
+		WillReturnRows(sqlmock.NewRows([]string{"bundle_json"}).AddRow(bundleJSON))
+	got, err := store.GetPolicyBundle(bundle.BundleID)
+	if err != nil {
+		t.Fatalf("GetPolicyBundle: %v", err)
+	}
+	if got.BundleHash != bundle.BundleHash {
+		t.Fatalf("policy bundle did not round-trip: %#v", got)
+	}
+	mock.ExpectQuery("SELECT bundle_json FROM policy_bundles").
+		WithArgs("missing").
+		WillReturnError(sql.ErrNoRows)
+	if _, err := store.GetPolicyBundle("missing"); !errors.Is(err, mission.ErrNotFound) {
+		t.Fatalf("GetPolicyBundle missing err = %v, want ErrNotFound", err)
+	}
+
+	mock.ExpectQuery("SELECT bundle_json").
+		WillReturnRows(sqlmock.NewRows([]string{"bundle_json"}).AddRow(bundleJSON))
+	bundles, err := store.ListPolicyBundles()
+	if err != nil {
+		t.Fatalf("ListPolicyBundles: %v", err)
+	}
+	if len(bundles) != 1 || bundles[0].BundleID != bundle.BundleID {
+		t.Fatalf("ListPolicyBundles = %#v", bundles)
+	}
+
+	bundle.Status = mission.PolicyBundleStatusActive
+	bundle.Signature = "hs256:test"
+	bundle.ActivatedAt = testUnitNow()
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE policy_bundles").
+		WithArgs(nullableString(bundle.TenantID), bundle.BundleID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE policy_bundles").
+		WithArgs(bundle.Status, nullableString(bundle.Signature), bundle.BundleHash, sqlmock.AnyArg(), nullableTime(bundle.ActivatedAt), bundle.BundleID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := store.ActivatePolicyBundle(bundle); err != nil {
+		t.Fatalf("ActivatePolicyBundle: %v", err)
+	}
+
+	activeJSON := mustJSON(t, bundle)
+	mock.ExpectQuery("SELECT bundle_json").
+		WithArgs(nullableString("tenant_2")).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT bundle_json").
+		WithArgs(nullableString("")).
+		WillReturnRows(sqlmock.NewRows([]string{"bundle_json"}).AddRow(activeJSON))
+	active, err := store.GetActivePolicyBundle("tenant_2")
+	if err != nil {
+		t.Fatalf("GetActivePolicyBundle fallback: %v", err)
+	}
+	if active.BundleID != bundle.BundleID {
+		t.Fatalf("active bundle = %#v", active)
+	}
+}
+
 func TestPostgresStoreCommitProposalApprovalTransaction(t *testing.T) {
 	store, mock, cleanup := newMockPostgresStore(t)
 	defer cleanup()
@@ -2305,6 +2402,25 @@ func sampleToolContract() mission.ToolContract {
 		ActionType:      "tool_call",
 		RequiredContext: []string{"finance.close.status"},
 		CreatedAt:       testUnitNow(),
+	}
+}
+
+func samplePolicyBundle() mission.PolicyBundle {
+	return mission.PolicyBundle{
+		BundleID:           "mpol_test",
+		TenantID:           "tenant_1",
+		Version:            "mission-policy/test",
+		Name:               "Test policy bundle",
+		Status:             mission.PolicyBundleStatusDraft,
+		CombiningAlgorithm: mission.PolicyCombiningFirstApplicable,
+		BundleHash:         "sha256:test",
+		CreatedAt:          testUnitNow(),
+		Rules: []mission.PolicyRule{{
+			RuleID:      "deny-delete",
+			Effect:      mission.PolicyEffectDeny,
+			Match:       mission.PolicyRuleMatch{Operations: []string{"delete"}},
+			ReasonCodes: []string{"POLICY_DELETE_DENIED"},
+		}},
 	}
 }
 

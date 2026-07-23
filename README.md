@@ -136,11 +136,23 @@ The server listens on `:8080` by default and uses the in-memory store unless `DA
 
 Set `AUTH_SCOPE_MODE=production` or `AUTH_SCOPE_ENV=production` for fail-closed startup checks. Production mode requires `DATABASE_URL`, explicit administrator credentials, and a non-placeholder `AUTH_SCOPE_DECISION_SECRET` of at least 32 characters. The production binary also requires signed agent requests on runtime authority endpoints such as mission evaluation, AuthZEN evaluation, delegation, projections, leases, and tool-call authorization.
 
-Governance and audit endpoints require a bearer token bound to an administrator principal. Configure one administrator with `AUTH_SCOPE_ADMIN_TOKEN`, `AUTH_SCOPE_ADMIN_SUBJECT`, and `AUTH_SCOPE_ADMIN_ISSUER`, or configure multiple independent approvers with `AUTH_SCOPE_ADMIN_CREDENTIALS`:
+Governance and audit endpoints require a bearer token bound to an administrator principal. Configure one administrator with `AUTH_SCOPE_ADMIN_TOKEN`, `AUTH_SCOPE_ADMIN_SUBJECT`, and `AUTH_SCOPE_ADMIN_ISSUER`, or configure multiple independent approvers with `AUTH_SCOPE_ADMIN_CREDENTIALS`. Static credentials can include `tenant_subject`, `roles`, `groups`, and `permissions`; omitted role metadata keeps backward-compatible owner access for local development:
 
 ```sh
-AUTH_SCOPE_ADMIN_CREDENTIALS='[{"token":"alice-secret","subject":"alice@example.com","issuer":"https://idp.example.com"},{"token":"bob-secret","subject":"bob@example.com","issuer":"https://idp.example.com"}]' go run ./cmd/auth-scope
+AUTH_SCOPE_ADMIN_CREDENTIALS='[{"token":"alice-secret","subject":"alice@example.com","issuer":"https://idp.example.com","roles":["approver"]},{"token":"ops-secret","subject":"ops@example.com","issuer":"https://idp.example.com","tenant_subject":"demo","roles":["operator"]}]' go run ./cmd/auth-scope
 ```
+
+For enterprise SSO, configure OIDC/JWKS admin authentication instead of static tokens:
+
+```sh
+AUTH_SCOPE_ADMIN_OIDC_ISSUER=https://idp.example.com \
+AUTH_SCOPE_ADMIN_OIDC_AUDIENCE=auth-scope-admin \
+AUTH_SCOPE_ADMIN_OIDC_JWKS='{"keys":[...]}' \
+AUTH_SCOPE_ADMIN_GROUP_ROLE_MAPPINGS='{"AuthScope Approvers":["approver"],"AuthScope Auditors":["auditor"],"AuthScope Operators":["operator"],"AuthScope Integration Admins":["integration-admin"]}' \
+go run ./cmd/auth-scope
+```
+
+OIDC admin tokens must be RS256-signed, include `iss`, `aud`, `sub`, and `exp`, and are verified against the configured JWKS without calling the identity provider at request time. Optional claims default to `groups`, `roles`, `permissions`, and `tenant_subject`; override them with `AUTH_SCOPE_ADMIN_OIDC_GROUPS_CLAIM`, `AUTH_SCOPE_ADMIN_OIDC_ROLES_CLAIM`, `AUTH_SCOPE_ADMIN_OIDC_PERMISSIONS_CLAIM`, and `AUTH_SCOPE_ADMIN_OIDC_TENANT_CLAIM`. Built-in roles are `owner`, `approver`, `auditor`, `operator`, and `integration-admin`; protected admin writes emit `admin.action` audit events with actor, role, permission, path, request ID, and status code.
 
 The request body cannot select its approver, containment administrator, or tenant when the administrator credential is tenant-bound. The service derives those identities from the bearer credential. Docker Compose includes development-only Alice and Bob credentials; use `dev-compose-admin-alice` and `dev-compose-admin-bob` when exercising the examples locally.
 

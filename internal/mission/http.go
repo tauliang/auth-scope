@@ -46,6 +46,7 @@ func NewHandlerWithOptions(service *Service, authenticator AdminAuthenticator, o
 		Slack:           service,
 		Atlassian:       service,
 		Salesforce:      service,
+		AdminAudit:      service,
 	}, authenticator, options)
 }
 
@@ -64,75 +65,75 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /.well-known/authzen-configuration", h.authZENDiscovery)
 	mux.HandleFunc("POST /access/v1/evaluation", h.authZENEvaluation)
 	mux.HandleFunc("POST /access/v1/evaluations", h.authZENEvaluations)
-	mux.Handle("POST /v1/agents", h.requireAdmin(http.HandlerFunc(h.registerAgent)))
+	mux.Handle("POST /v1/agents", h.requireAdminPermission(AdminPermissionOperate, http.HandlerFunc(h.registerAgent)))
 	mux.Handle("GET /v1/admin/session", h.requireAdmin(http.HandlerFunc(h.adminSession)))
 	mux.Handle("GET /v1/operations/summary", h.requireAdmin(http.HandlerFunc(h.operationsSummary)))
 	mux.Handle("GET /v1/agents", h.requireAdmin(http.HandlerFunc(h.listAgents)))
 	mux.Handle("GET /v1/agents/{agent_id}", h.requireAdmin(http.HandlerFunc(h.getAgent)))
-	mux.Handle("POST /v1/agents/{agent_id}/revoke", h.requireAdmin(http.HandlerFunc(h.revokeAgent)))
-	mux.Handle("POST /v1/mission-proposals", h.requireAdmin(http.HandlerFunc(h.createProposal)))
+	mux.Handle("POST /v1/agents/{agent_id}/revoke", h.requireAdminPermission(AdminPermissionOperate, http.HandlerFunc(h.revokeAgent)))
+	mux.Handle("POST /v1/mission-proposals", h.requireAdminPermission(AdminPermissionOperate, http.HandlerFunc(h.createProposal)))
 	mux.Handle("GET /v1/mission-proposals", h.requireAdmin(http.HandlerFunc(h.listProposals)))
 	mux.Handle("GET /v1/mission-proposals/{proposal_id}", h.requireAdmin(http.HandlerFunc(h.getProposal)))
-	mux.Handle("POST /v1/mission-proposals/{proposal_id}/approve", h.requireAdmin(http.HandlerFunc(h.approveProposal)))
+	mux.Handle("POST /v1/mission-proposals/{proposal_id}/approve", h.requireAdminPermission(AdminPermissionApprove, http.HandlerFunc(h.approveProposal)))
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/evaluate", h.evaluate)
 	mux.Handle("GET /v1/missions", h.requireAdmin(http.HandlerFunc(h.listMissions)))
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/authority/negotiations", h.createAuthorityNegotiation)
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/expansion-requests", h.createExpansionRequest)
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/resume", h.resume)
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/delegate", h.delegate)
-	mux.Handle("POST /v1/missions/{mission_ref}/revoke", h.requireAdmin(http.HandlerFunc(h.revoke)))
-	mux.Handle("POST /v1/missions/{mission_ref}/complete", h.requireAdmin(http.HandlerFunc(h.complete)))
+	mux.Handle("POST /v1/missions/{mission_ref}/revoke", h.requireAdminPermission(AdminPermissionOperate, http.HandlerFunc(h.revoke)))
+	mux.Handle("POST /v1/missions/{mission_ref}/complete", h.requireAdminPermission(AdminPermissionOperate, http.HandlerFunc(h.complete)))
 	mux.Handle("GET /v1/missions/{mission_ref}/introspect", h.requireAdmin(http.HandlerFunc(h.introspect)))
 	mux.Handle("GET /v1/missions/{mission_ref}/lineage", h.requireAdmin(http.HandlerFunc(h.missionLineage)))
 	mux.Handle("GET /v1/agents/{agent_id}/lineage", h.requireAdmin(http.HandlerFunc(h.agentLineage)))
 	mux.Handle("GET /v1/expansion-requests/{expansion_id}", h.requireAdmin(http.HandlerFunc(h.getExpansionRequest)))
 	mux.Handle("GET /v1/expansion-requests", h.requireAdmin(http.HandlerFunc(h.listExpansions)))
-	mux.Handle("POST /v1/expansion-requests/{expansion_id}/approve", h.requireAdmin(http.HandlerFunc(h.approveExpansionRequest)))
-	mux.Handle("POST /v1/expansion-requests/{expansion_id}/deny", h.requireAdmin(http.HandlerFunc(h.denyExpansionRequest)))
+	mux.Handle("POST /v1/expansion-requests/{expansion_id}/approve", h.requireAdminPermission(AdminPermissionApprove, http.HandlerFunc(h.approveExpansionRequest)))
+	mux.Handle("POST /v1/expansion-requests/{expansion_id}/deny", h.requireAdminPermission(AdminPermissionApprove, http.HandlerFunc(h.denyExpansionRequest)))
 	mux.Handle("GET /v1/authority/negotiations/{negotiation_id}", h.requireAdmin(http.HandlerFunc(h.getAuthorityNegotiation)))
 	mux.HandleFunc("POST /v1/decision-artifacts/verify", h.verifyDecisionArtifact)
-	mux.Handle("POST /v1/tool-contracts", h.requireAdmin(http.HandlerFunc(h.registerToolContract)))
+	mux.Handle("POST /v1/tool-contracts", h.requireAdminPermission(AdminPermissionManageGovernance, http.HandlerFunc(h.registerToolContract)))
 	mux.Handle("GET /v1/tool-contracts", h.requireAdmin(http.HandlerFunc(h.listToolContracts)))
 	mux.Handle("GET /v1/tool-contracts/{tool_name}", h.requireAdmin(http.HandlerFunc(h.getToolContract)))
 	mux.HandleFunc("POST /v1/tool-calls/authorize", h.authorizeToolCall)
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/projections", h.createProjection)
 	mux.Handle("GET /v1/projections", h.requireAdmin(http.HandlerFunc(h.listProjections)))
 	mux.Handle("GET /v1/projections/{projection_id}/status", h.requireAdmin(http.HandlerFunc(h.getProjectionStatus)))
-	mux.Handle("POST /v1/projections/{projection_id}/revoke", h.requireAdmin(http.HandlerFunc(h.revokeProjection)))
+	mux.Handle("POST /v1/projections/{projection_id}/revoke", h.requireAdminPermission(AdminPermissionOperate, http.HandlerFunc(h.revokeProjection)))
 	mux.HandleFunc("POST /v1/projections/verify", h.verifyProjection)
 	mux.HandleFunc("POST /v1/missions/{mission_ref}/leases", h.createMissionLease)
 	mux.HandleFunc("POST /v1/leases/{lease_id}/refresh", h.refreshMissionLease)
-	mux.Handle("POST /v1/approval-rules", h.requireAdmin(http.HandlerFunc(h.createApprovalRule)))
+	mux.Handle("POST /v1/approval-rules", h.requireAdminPermission(AdminPermissionManageGovernance, http.HandlerFunc(h.createApprovalRule)))
 	mux.Handle("GET /v1/approval-rules", h.requireAdmin(http.HandlerFunc(h.listApprovalRules)))
-	mux.Handle("POST /v1/expansion-requests/{expansion_id}/approvals", h.requireAdmin(http.HandlerFunc(h.submitExpansionApproval)))
-	mux.Handle("POST /v1/policy-bundles", h.requireAdmin(http.HandlerFunc(h.createPolicyBundle)))
+	mux.Handle("POST /v1/expansion-requests/{expansion_id}/approvals", h.requireAdminPermission(AdminPermissionApprove, http.HandlerFunc(h.submitExpansionApproval)))
+	mux.Handle("POST /v1/policy-bundles", h.requireAdminPermission(AdminPermissionManageGovernance, http.HandlerFunc(h.createPolicyBundle)))
 	mux.Handle("GET /v1/policy-bundles", h.requireAdmin(http.HandlerFunc(h.listPolicyBundles)))
 	mux.Handle("GET /v1/policy-bundles/{bundle_id}", h.requireAdmin(http.HandlerFunc(h.getPolicyBundle)))
-	mux.Handle("POST /v1/policy-bundles/{bundle_id}/activate", h.requireAdmin(http.HandlerFunc(h.activatePolicyBundle)))
-	mux.Handle("POST /v1/policy-bundles/{bundle_id}/simulate", h.requireAdmin(http.HandlerFunc(h.simulatePolicyBundle)))
-	mux.Handle("POST /v1/containment-rules", h.requireAdmin(http.HandlerFunc(h.createContainmentRule)))
+	mux.Handle("POST /v1/policy-bundles/{bundle_id}/activate", h.requireAdminPermission(AdminPermissionManageGovernance, http.HandlerFunc(h.activatePolicyBundle)))
+	mux.Handle("POST /v1/policy-bundles/{bundle_id}/simulate", h.requireAdminPermission(AdminPermissionRead, http.HandlerFunc(h.simulatePolicyBundle)))
+	mux.Handle("POST /v1/containment-rules", h.requireAdminPermission(AdminPermissionManageGovernance, http.HandlerFunc(h.createContainmentRule)))
 	mux.Handle("GET /v1/containment-rules", h.requireAdmin(http.HandlerFunc(h.listContainmentRules)))
 	mux.Handle("GET /v1/containment-rules/{rule_id}", h.requireAdmin(http.HandlerFunc(h.getContainmentRule)))
-	mux.Handle("POST /v1/containment-rules/{rule_id}/lift", h.requireAdmin(http.HandlerFunc(h.liftContainmentRule)))
+	mux.Handle("POST /v1/containment-rules/{rule_id}/lift", h.requireAdminPermission(AdminPermissionManageGovernance, http.HandlerFunc(h.liftContainmentRule)))
 	mux.Handle("GET /v1/containment-rules/{rule_id}/blast-radius", h.requireAdmin(http.HandlerFunc(h.containmentBlastRadius)))
-	mux.Handle("POST /v1/integrations/github/repositories", h.requireAdmin(http.HandlerFunc(h.createGitHubRepositoryBinding)))
+	mux.Handle("POST /v1/integrations/github/repositories", h.requireAdminPermission(AdminPermissionManageIntegrations, http.HandlerFunc(h.createGitHubRepositoryBinding)))
 	mux.Handle("GET /v1/integrations/github/repositories", h.requireAdmin(http.HandlerFunc(h.listGitHubRepositoryBindings)))
 	mux.HandleFunc("POST /v1/integrations/github/webhooks", h.githubWebhook)
 	mux.HandleFunc("POST /v1/integrations/github/check-runs/plan", h.githubCheckRunPlan)
-	mux.Handle("POST /v1/integrations/okta/app-bindings", h.requireAdmin(http.HandlerFunc(h.createOktaAppBinding)))
+	mux.Handle("POST /v1/integrations/okta/app-bindings", h.requireAdminPermission(AdminPermissionManageIntegrations, http.HandlerFunc(h.createOktaAppBinding)))
 	mux.Handle("GET /v1/integrations/okta/app-bindings", h.requireAdmin(http.HandlerFunc(h.listOktaAppBindings)))
 	mux.HandleFunc("POST /v1/integrations/okta/authority-context/resolve", h.resolveOktaAuthorityContext)
-	mux.Handle("POST /v1/integrations/entra/app-registrations", h.requireAdmin(http.HandlerFunc(h.createEntraAppRegistration)))
+	mux.Handle("POST /v1/integrations/entra/app-registrations", h.requireAdminPermission(AdminPermissionManageIntegrations, http.HandlerFunc(h.createEntraAppRegistration)))
 	mux.Handle("GET /v1/integrations/entra/app-registrations", h.requireAdmin(http.HandlerFunc(h.listEntraAppRegistrations)))
 	mux.HandleFunc("POST /v1/integrations/entra/authority-context/resolve", h.resolveEntraAuthorityContext)
-	mux.Handle("POST /v1/integrations/slack/workspace-bindings", h.requireAdmin(http.HandlerFunc(h.createSlackWorkspaceBinding)))
+	mux.Handle("POST /v1/integrations/slack/workspace-bindings", h.requireAdminPermission(AdminPermissionManageIntegrations, http.HandlerFunc(h.createSlackWorkspaceBinding)))
 	mux.Handle("GET /v1/integrations/slack/workspace-bindings", h.requireAdmin(http.HandlerFunc(h.listSlackWorkspaceBindings)))
 	mux.HandleFunc("POST /v1/integrations/slack/message-actions/authorize", h.authorizeSlackMessageAction)
-	mux.Handle("POST /v1/integrations/atlassian/site-bindings", h.requireAdmin(http.HandlerFunc(h.createAtlassianSiteBinding)))
+	mux.Handle("POST /v1/integrations/atlassian/site-bindings", h.requireAdminPermission(AdminPermissionManageIntegrations, http.HandlerFunc(h.createAtlassianSiteBinding)))
 	mux.Handle("GET /v1/integrations/atlassian/site-bindings", h.requireAdmin(http.HandlerFunc(h.listAtlassianSiteBindings)))
 	mux.HandleFunc("POST /v1/integrations/atlassian/jira/issues/authorize", h.authorizeAtlassianJiraIssueAction)
 	mux.HandleFunc("POST /v1/integrations/atlassian/confluence/pages/authorize", h.authorizeAtlassianConfluencePageAction)
-	mux.Handle("POST /v1/integrations/salesforce/org-bindings", h.requireAdmin(http.HandlerFunc(h.createSalesforceOrgBinding)))
+	mux.Handle("POST /v1/integrations/salesforce/org-bindings", h.requireAdminPermission(AdminPermissionManageIntegrations, http.HandlerFunc(h.createSalesforceOrgBinding)))
 	mux.Handle("GET /v1/integrations/salesforce/org-bindings", h.requireAdmin(http.HandlerFunc(h.listSalesforceOrgBindings)))
 	mux.HandleFunc("POST /v1/integrations/salesforce/records/authorize", h.authorizeSalesforceRecordAction)
 	mux.Handle("GET /v1/events", h.requireAdmin(http.HandlerFunc(h.events)))
@@ -141,20 +142,83 @@ func (h *Handler) Routes() http.Handler {
 }
 
 func (h *Handler) requireAdmin(next http.Handler) http.Handler {
+	return h.requireAdminPermission(AdminPermissionRead, next)
+}
+
+func (h *Handler) requireAdminPermission(permission AdminPermission, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h.adminAuthenticator == nil {
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			writeError(w, http.StatusUnauthorized, ErrAdminAuthenticationRequired)
-			return
-		}
-		principal, err := h.adminAuthenticator.Authenticate(r)
+		identity, err := authenticateAdminIdentity(h.adminAuthenticator, r)
 		if err != nil {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeError(w, http.StatusUnauthorized, ErrAdminAuthenticationRequired)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withAdminPrincipal(r.Context(), principal)))
+		if !adminIdentityHasPermission(identity, permission) {
+			reason := fmt.Sprintf("admin permission %q is required", permission)
+			h.recordAdminAction(r, identity, permission, false, http.StatusForbidden, reason)
+			writeError(w, http.StatusForbidden, errors.New(reason))
+			return
+		}
+		request := r.WithContext(withAdminIdentity(r.Context(), identity))
+		if !shouldAuditAdminRequest(r) {
+			next.ServeHTTP(w, request)
+			return
+		}
+		capture := &statusCaptureResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(capture, request)
+		h.recordAdminAction(r, identity, permission, true, capture.statusCode(), "")
 	})
+}
+
+func (h *Handler) recordAdminAction(r *http.Request, identity AdminIdentity, permission AdminPermission, allowed bool, statusCode int, reason string) {
+	if h.services.AdminAudit == nil || !shouldAuditAdminRequest(r) {
+		return
+	}
+	h.services.AdminAudit.RecordAdminAction(AdminActionAudit{
+		Identity:   identity,
+		Method:     r.Method,
+		Path:       r.URL.Path,
+		Permission: permission,
+		Allowed:    allowed,
+		StatusCode: statusCode,
+		Reason:     reason,
+		RequestID:  strings.TrimSpace(r.Header.Get("x-request-id")),
+	})
+}
+
+func shouldAuditAdminRequest(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	default:
+		return true
+	}
+}
+
+type statusCaptureResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusCaptureResponseWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusCaptureResponseWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *statusCaptureResponseWriter) statusCode() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
 }
 
 func bindAdminTenant(w http.ResponseWriter, r *http.Request, tenantID *string) bool {

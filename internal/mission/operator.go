@@ -35,6 +35,10 @@ type OperationsSummary struct {
 
 type AdminSessionResponse struct {
 	Principal    Principal       `json:"principal"`
+	Provider     string          `json:"provider,omitempty"`
+	Groups       []string        `json:"groups,omitempty"`
+	Roles        []string        `json:"roles,omitempty"`
+	Permissions  []string        `json:"permissions,omitempty"`
 	Capabilities map[string]bool `json:"capabilities"`
 	APIVersion   string          `json:"api_version"`
 }

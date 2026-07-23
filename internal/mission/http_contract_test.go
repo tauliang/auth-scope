@@ -53,6 +53,8 @@ func TestOpenAPIDocumentsHTTPRouteInventory(t *testing.T) {
 		"/v1/projections/{projection_id}/status",
 		"/v1/projections/{projection_id}/revoke",
 		"/v1/projections/verify",
+		"/v1/projections/exchange",
+		"/v1/projections/credentials/verify",
 		"/v1/leases/{lease_id}/refresh",
 		"/v1/approval-rules",
 		"/v1/policy-bundles",

@@ -683,6 +683,36 @@ func TestAPIProjectionLeaseApprovalRuleAndEventStream(t *testing.T) {
 		t.Fatalf("unexpected verify projection response: %#v", verified)
 	}
 
+	exchange := httptest.NewRecorder()
+	router.ServeHTTP(exchange, jsonRequest(http.MethodPost, "/v1/projections/exchange", ExchangeProjectionTokenRequest{
+		ProjectionToken: projection.Token,
+		Actor:           Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+		Nonce:           "http-exchange-1",
+		TTLSeconds:      30,
+	}))
+	if exchange.Code != http.StatusCreated {
+		t.Fatalf("exchange projection status = %d body=%s", exchange.Code, exchange.Body.String())
+	}
+	var credential CredentialAccessTokenResponse
+	decodeTestJSON(t, exchange.Body.Bytes(), &credential)
+	if credential.AccessToken == "" || credential.ProjectionID != projection.ProjectionID {
+		t.Fatalf("unexpected credential response: %#v", credential)
+	}
+
+	verifyCredential := httptest.NewRecorder()
+	router.ServeHTTP(verifyCredential, jsonRequest(http.MethodPost, "/v1/projections/credentials/verify", VerifyCredentialAccessTokenRequest{
+		Token: credential.AccessToken,
+		Actor: Actor{AgentInstanceID: "inst_123", ClientID: "research-agent"},
+	}))
+	if verifyCredential.Code != http.StatusOK {
+		t.Fatalf("verify credential status = %d body=%s", verifyCredential.Code, verifyCredential.Body.String())
+	}
+	var verifiedCredential VerifyCredentialAccessTokenResponse
+	decodeTestJSON(t, verifyCredential.Body.Bytes(), &verifiedCredential)
+	if !verifiedCredential.Valid || verifiedCredential.Payload.ProjectionID != projection.ProjectionID {
+		t.Fatalf("unexpected credential verification: %#v", verifiedCredential)
+	}
+
 	status := httptest.NewRecorder()
 	router.ServeHTTP(status, httptest.NewRequest(http.MethodGet, "/v1/projections/"+projection.ProjectionID+"/status", nil))
 	if status.Code != http.StatusOK {
@@ -1030,6 +1060,14 @@ func (s *erroringHandlerService) AuthorizeToolCall(AuthorizeToolCallRequest) (Au
 
 func (s *erroringHandlerService) CreateProjection(string, CreateProjectionRequest) (ProjectionResponse, error) {
 	return ProjectionResponse{}, s.err
+}
+
+func (s *erroringHandlerService) ExchangeProjectionToken(ExchangeProjectionTokenRequest) (CredentialAccessTokenResponse, error) {
+	return CredentialAccessTokenResponse{}, s.err
+}
+
+func (s *erroringHandlerService) VerifyCredentialAccessToken(VerifyCredentialAccessTokenRequest) VerifyCredentialAccessTokenResponse {
+	return VerifyCredentialAccessTokenResponse{Valid: false, Error: s.err.Error()}
 }
 
 func (s *erroringHandlerService) CreateMissionLease(string, CreateLeaseRequest) (LeaseResponse, error) {

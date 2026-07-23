@@ -8,16 +8,15 @@ import (
 )
 
 func (h *Handler) adminSession(w http.ResponseWriter, r *http.Request) {
+	identity := authenticatedAdminIdentity(r)
 	writeJSON(w, http.StatusOK, AdminSessionResponse{
-		Principal: authenticatedAdmin(r),
-		Capabilities: map[string]bool{
-			"approve":     true,
-			"audit":       true,
-			"containment": true,
-			"governance":  true,
-			"revoke":      true,
-		},
-		APIVersion: "v1",
+		Principal:    identity.Principal,
+		Provider:     identity.Provider,
+		Groups:       identity.Groups,
+		Roles:        identity.Roles,
+		Permissions:  identity.Permissions,
+		Capabilities: AdminCapabilitiesForIdentity(identity),
+		APIVersion:   "v1",
 	})
 }
 

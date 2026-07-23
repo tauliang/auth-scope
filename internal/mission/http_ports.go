@@ -133,4 +133,5 @@ type HandlerServices struct {
 	Slack           SlackAPI
 	Atlassian       AtlassianAPI
 	Salesforce      SalesforceAPI
+	AdminAudit      AdminAuditAPI
 }

@@ -303,6 +303,17 @@ describe("operator workflows", () => {
     await user.click(screen.getByRole("button", { name: "Approval rule" }));
     await user.click(screen.getByRole("button", { name: "Create rule" }));
     expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/approval-rules$/), expect.objectContaining({ method: "POST" }));
+
+    await user.click(screen.getByRole("button", { name: "Activate" }));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/policy-bundles\/policy-1\/activate$/), expect.objectContaining({ method: "POST" }));
+
+    await user.click(screen.getByRole("button", { name: "Policy bundle" }));
+    const policyBand = screen.getByRole("heading", { name: "New policy bundle" }).closest("section")!;
+    await user.clear(within(policyBand).getByLabelText("Version"));
+    await user.type(within(policyBand).getByLabelText("Version"), "mission-policy/ui-test");
+    await user.click(within(policyBand).getByRole("button", { name: "Create bundle" }));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/policy-bundles$/), expect.objectContaining({ method: "POST" }));
+
     await user.click(screen.getByRole("button", { name: "Tool contract" }));
     await user.type(screen.getByLabelText("Tool name"), "slack.post");
     await user.type(screen.getByLabelText("Resource type"), "slack_channel");
